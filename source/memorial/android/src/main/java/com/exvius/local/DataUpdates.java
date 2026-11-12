@@ -200,7 +200,73 @@ public final class DataUpdates {
             preferences(context).edit().remove(preference).commit();
             return resumableDownload(context, key, url, suffix, base, total, label);
         }
-        return downloadManager(context, key, url, suffix, base, total, small);
+        if (small) return fetchSmall(context, key, url, suffix);
+        return downloadManager(context, key, url, suffix, base, total, false);
+    }
+
+    /**
+     * The update manifest is a few KB. It used to go through Android's DownloadManager with a 20 second
+     * deadline, which fails whenever the system queues the job (metered network, "Wi-Fi only" downloader
+     * policy, a busy or disabled Download Manager). The job then stayed queued, so every Retry polled the
+     * same stuck download and showed "Update check paused" again (issues #73, #74). Fetch it directly.
+     */
+    private static File fetchSmall(Context context, String key, String url, String suffix) throws Exception {
+        SharedPreferences saved = preferences(context);
+        long stale = saved.getLong("download_" + key, -1);
+        if (stale >= 0) {
+            downloads(context).remove(stale);
+            saved.edit().remove("download_" + key).commit();
+        }
+        File target = downloadFile(context, key, suffix);
+        IOException last = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            progress(attempt == 1 ? "Checking for game data..." :
+                "Checking for game data...\nRetrying (" + attempt + " of 3)", 0, 0);
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL(url).openConnection();
+                connection.setConnectTimeout(15000);
+                connection.setReadTimeout(15000);
+                connection.setInstanceFollowRedirects(true);
+                connection.setUseCaches(false);
+                int code = connection.getResponseCode();
+                if (code != HttpURLConnection.HTTP_OK)
+                    throw new IOException("GitHub answered HTTP " + code);
+                try (InputStream input = connection.getInputStream();
+                     FileOutputStream output = new FileOutputStream(target)) {
+                    byte[] buffer = new byte[8192];
+                    long size = 0;
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        size += count;
+                        if (size > 524288) throw new IOException("Update information is too large");
+                        output.write(buffer, 0, count);
+                    }
+                    output.getFD().sync();
+                }
+                return target;
+            } catch (IOException error) {
+                last = error;
+                target.delete();
+                if (!online(context)) break;
+                Thread.sleep(2000L * attempt);
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        }
+        android.util.Log.w("ExviusUpdates", "Update check failed", last);
+        throw new IOException(online(context) ?
+            "Couldn't reach GitHub to check for game data. If you're on mobile data or a VPN, try Wi-Fi, then tap Retry." :
+            "You're offline. Connect to the internet, then tap Retry.");
+    }
+
+    private static String pausedReason(int reason) {
+        switch (reason) {
+            case DownloadManager.PAUSED_QUEUED_FOR_WIFI: return "Android is holding this download until you're on Wi-Fi.";
+            case DownloadManager.PAUSED_WAITING_FOR_NETWORK: return "Waiting for a network connection.";
+            case DownloadManager.PAUSED_WAITING_TO_RETRY: return "The connection dropped; Android will retry shortly.";
+            default: return "Android paused this download.";
+        }
     }
 
     private static File resumableDownload(Context context, String key, String url, String suffix,
@@ -344,6 +410,10 @@ public final class DataUpdates {
                     "Downloading game data: " + ((base + done) / 1048576) + " / " + (total / 1048576) + " MB",
                     base + Math.max(0, done), total);
                 if (status == DownloadManager.STATUS_SUCCESSFUL) return target;
+                if (status == DownloadManager.STATUS_PAUSED) {
+                    int reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON));
+                    progress("Downloading app update...\n" + pausedReason(reason), base + Math.max(0, done), total);
+                }
                 if (status == DownloadManager.STATUS_FAILED) {
                     int reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON));
                     manager.remove(id);
@@ -352,7 +422,8 @@ public final class DataUpdates {
                         "Not enough free storage for the game data." : "The download could not finish. Check your connection and retry.");
                 }
                 if (System.currentTimeMillis() > deadline || (listener == null && !online(context)))
-                    throw new IOException("Update check paused");
+                    throw new IOException(small ? "Update check timed out. Tap Retry." :
+                        "App update paused until you're back online.");
             }
             Thread.sleep(1000);
         }
