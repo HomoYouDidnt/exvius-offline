@@ -1154,7 +1154,7 @@ def expand_pool(banner: dict) -> list:
     expands to every base-rarity root of that rarity; `featured` units take `featured_share` of the tier
     (split equally) and the non-featured take the remainder. This keeps `gacha_authored.json` small and the
     pool real -- the unit catalogue is shipped data."""
-    from gacha_tweaks import adjust_rows   # the player's rate multipliers (Exvius Settings)
+    from player_tweaks import adjust_rows   # the player's rate multipliers (Exvius Settings)
     pool = banner.get("pool")
     if isinstance(pool, list):
         return adjust_rows(_only_named(pool))
@@ -2880,6 +2880,9 @@ class PlayerState:
     def add_currency(self, kind: str, amount: int) -> int:
         if not self._mutate():
             return self.currencies.get(kind, 0)
+        if kind in ("lapis_free", "lapis_paid") and int(amount) > 0:
+            from player_tweaks import lapis_gain   # the player's lapis multiplier (Exvius Settings)
+            amount = lapis_gain(amount)
         self.currencies[kind] = self.currencies.get(kind, 0) + int(amount)
         if int(amount) > 0 and kind in ('gil', 'friend_point'):
             self.record_archive({'TOTAL_GIL_GET' if kind == 'gil' else 'TOTAL_FRIEND_POINT': int(amount)})
@@ -4256,6 +4259,8 @@ class PlayerState:
         # --- cost -------------------------------------------------------------------------------------
         kind = str(cost.get("kind", "free"))
         amount = int(cost.get("amount", 0) or 0)          # charged ONCE per transaction (see above)
+        from player_tweaks import summon_cost             # the price the summon screen showed
+        amount = summon_cost(kind, amount)
         spent_ticket = None
         ticket_rar = None
         # THE PURCHASE METHOD IS RESOLVED FIRST. The client names the ticket it is paying with in

@@ -79,8 +79,9 @@ def page(banner_id):
             body += '<h2>' + ('Single summon' if index == 0 else 'Multi-summon') + '</h2>'
         cost = offer.get('cost', banner.get('cost', {}))
         if isinstance(cost, dict):
-            amount = int(cost.get('amount', 0))
+            from player_tweaks import summon_cost
             currency = cost.get('kind', 'free')
+            amount = summon_cost(currency, int(cost.get('amount', 0)))
             if cost.get('item_id'):
                 currency = _item_names().get(str(cost['item_id']), 'Item ' + str(cost['item_id']))
             if amount:

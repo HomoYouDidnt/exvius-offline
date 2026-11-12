@@ -1,13 +1,19 @@
-# How summons work, and how to change the rates
+# How summons work, and how to change the rates, lapis gains and summon prices
 
 ## The short version
 
-Exvius Settings (the second launcher icon) has two summon rows:
+Exvius Settings (the second launcher icon) has four rows for this:
 
 - **5★ and Neo Vision chance:** 1x, 2x, 5x or 10x.
 - **Rate-up units on top of that:** 1x, 2x or 4x.
+- **Lapis gained:** 1x, 2x, 3x, 5x or 10x. Every lapis credit (mission challenges, rank-ups, quests,
+  mail, exchanges) is multiplied. Spending isn't.
+- **Lapis summon price:** Normal, Half, or 1 lapis for any lapis summon, single or multi. Tickets,
+  friend points and item costs don't change.
 
-They apply from the next summon, and the in-game Drop Rates button shows the exact odds they produce.
+They apply right away. The in-game Drop Rates button shows the exact odds; reopen the summon screen to
+see a new price. Result screens still print a mission's original lapis amount, but the top bar shows
+what you really have.
 
 ## What happens on a pull
 
@@ -32,25 +38,30 @@ They apply from the next summon, and the in-game Drop Rates button shows the exa
 Editing those files changes one banner at a time but needs a new build. The multipliers change every
 banner at once without a rebuild.
 
-## The multiplier file
+## The settings file
 
-The settings screen writes `files/exvius/gacha_tweaks.json`. `source/server/gacha_tweaks.py` reads it
-before every pull. It accepts finer values than the screen offers:
+The settings screen writes `files/exvius/tweaks.json`. `source/server/player_tweaks.py` reads it whenever
+it changes. It accepts finer values than the screen offers:
 
 ```json
 {
   "rarity_multiplier": {"5": 3, "6": 3, "7": 3, "4": 1.5},
-  "featured_multiplier": 2
+  "featured_multiplier": 2,
+  "lapis_multiplier": 2.5,
+  "lapis_summon_cost": "half"
 }
 ```
 
 - `rarity_multiplier` scales every unit of that base rarity (7 is Neo Vision).
 - `featured_multiplier` scales a banner's rate-up units on top.
-- No file, or a broken one, means the banner's own rates.
-- Values are capped at 1000. Negative or non-numeric values are ignored.
+- `lapis_multiplier` scales lapis gains in `State.add_currency`, the one place lapis is credited.
+- `lapis_summon_cost` is `"half"` or `"1"`. The shown price and the charge both go through
+  `summon_cost`, so the screen and your balance always agree.
+- No file, or a broken one, means the game's own numbers.
+- Multipliers are capped at 1000. Negative or non-numeric values are ignored.
 
 Because weights are normalised, a multiplier isn't a flat percentage. 5x on a 1% tier comes out at about
 4.8%, not 5%. The Drop Rates screen shows the real figure.
 
-The multipliers don't touch costs, guarantees, step-ups, box summons, or item pools such as reward
+The rate multipliers don't touch guarantees, step-up structure, box summons, or item pools such as reward
 summons.

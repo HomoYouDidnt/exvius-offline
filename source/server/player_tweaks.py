@@ -1,4 +1,4 @@
-"""gacha_tweaks.py -- the player's own summon-rate adjustments, applied on top of the banner data.
+"""player_tweaks.py -- the player's own adjustments: summon-rate multipliers and a lapis gain multiplier.
 
 How a summon works here (see `player_state.State.roll_gacha` and `expand_pool`):
 
@@ -14,18 +14,29 @@ This module only reweights rows. It never changes guarantees, costs or which uni
 setting can't make a banner unwinnable. The Drop Rates screen reads the same `expand_pool`, so it shows
 the odds the tweaks produce.
 
-The settings file is `gacha_tweaks.json` next to the save folder (on Android
-`files/exvius/gacha_tweaks.json`, written by the Exvius Settings screen). `GACHA_TWEAKS` overrides the
-path. A missing or unreadable file means retail-shaped rates. Example:
+The settings file is `tweaks.json` next to the save folder (on Android `files/exvius/tweaks.json`,
+written by the Exvius Settings screen). `EXVIUS_TWEAKS` overrides the path. A missing or unreadable file
+means the game's own numbers. Example:
 
     {
       "rarity_multiplier": {"5": 3, "7": 3},
-      "featured_multiplier": 2
+      "featured_multiplier": 2,
+      "lapis_multiplier": 3,
+      "lapis_summon_cost": "half"
     }
 
 `rarity_multiplier` scales every row of that base rarity (7 = Neo Vision). `featured_multiplier` scales
 a banner's rate-up units on top of that. A multiplier of 3 on a 1% tier makes it about 3% of the
 weight; the exact chance is shown on the Drop Rates screen after the weights are normalised.
+
+`lapis_multiplier` scales every lapis GAIN (mission challenges, rank-up bonus, quests, mail, login
+rewards, exchanges) at the one place lapis is credited, `State.add_currency`. Spending is unchanged.
+Result screens still print the original amount; the top bar shows the real balance.
+
+`lapis_summon_cost` changes what a lapis-priced summon costs: "half" (rounded down, at least 1) or "1"
+(every lapis summon, single or multi, costs 1 lapis). Both the price the summon screen shows and the
+amount charged go through `summon_cost`, so they always agree. Ticket, friend point and item costs are
+unchanged.
 """
 from __future__ import annotations
 
@@ -39,8 +50,8 @@ _cache: dict = {"key": None, "value": {}}
 
 
 def settings_path() -> str:
-    return os.environ.get("GACHA_TWEAKS") or os.path.join(os.path.dirname(data_paths.STATE_DIR),
-                                                           "gacha_tweaks.json")
+    return os.environ.get("EXVIUS_TWEAKS") or os.path.join(os.path.dirname(data_paths.STATE_DIR),
+                                                            "tweaks.json")
 
 
 def _number(value) -> float | None:
@@ -78,15 +89,40 @@ def settings() -> dict:
         featured = _number(raw.get("featured_multiplier"))
         if featured is not None and featured != 1:
             value["featured_multiplier"] = featured
+        cost = str(raw.get("lapis_summon_cost") or "").strip().lower()
+        if cost in ("half", "1"):
+            value["lapis_summon_cost"] = cost
+        lapis = _number(raw.get("lapis_multiplier"))
+        if lapis is not None and lapis != 1:
+            value["lapis_multiplier"] = lapis
     except (OSError, ValueError, AttributeError) as error:
-        print(f"    gacha tweaks ignored ({type(error).__name__}): {path}", flush=True)
+        print(f"    player tweaks ignored ({type(error).__name__}): {path}", flush=True)
         value = {}
     _cache.update(key=key, value=value)
     return value
 
 
 def active() -> bool:
-    return bool(settings())
+    """Whether any summon multiplier is set."""
+    current = settings()
+    return bool(current.get("rarity_multiplier") or current.get("featured_multiplier"))
+
+
+def summon_cost(kind, amount: int) -> int:
+    """A summon price after the player's setting. Only lapis prices (cost kind "lapis" or 50) change."""
+    amount = int(amount or 0)
+    mode = settings().get("lapis_summon_cost")
+    if not mode or amount <= 0 or str(kind) not in ("lapis", "50"):
+        return amount
+    return 1 if mode == "1" else max(1, amount // 2)
+
+
+def lapis_gain(amount: int) -> int:
+    """A lapis gain after the player's multiplier (rounded; never below the original for factors >= 1)."""
+    factor = settings().get("lapis_multiplier")
+    if factor is None or int(amount) <= 0:
+        return int(amount)
+    return int(round(int(amount) * factor))
 
 
 def adjust(rate: float, rarity, featured: bool = False) -> float:

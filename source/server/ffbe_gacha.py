@@ -409,7 +409,9 @@ def _gacha_cost_string(cost, draws: int = 1, item_id: int = 0) -> str:
         if num == 0:
             continue
         d = int(e.get("draws", draws))
-        out.append(f"{num}:{int(e.get('item_id', item_id) or 0)}:{int(e.get('amount', 0))}:{d}")
+        from player_tweaks import summon_cost   # the player's summon price setting (Exvius Settings)
+        price = summon_cost(kind, int(e.get('amount', 0)))
+        out.append(f"{num}:{int(e.get('item_id', item_id) or 0)}:{price}:{d}")
     return ",".join(out)
 def _gacha_art(art: dict, key: str) -> str:
     """The art filename for `key` in the preferred locale. `art` may carry a `key_en` English override;

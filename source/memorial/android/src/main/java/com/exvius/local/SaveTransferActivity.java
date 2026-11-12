@@ -34,7 +34,7 @@ import org.json.JSONObject;
  * and a build signed with a different key can only be installed after uninstalling. This screen is the
  * way to carry a save across any of those. It has its own launcher icon ("Exvius Settings") because
  * the game itself starts straight from the main icon. The same screen holds the game speed setting and
- * the summon rate multipliers (written to files/exvius/gacha_tweaks.json, read by server/gacha_tweaks.py).
+ * the summon and lapis multipliers (written to files/exvius/tweaks.json, read by server/player_tweaks.py).
  */
 public final class SaveTransferActivity extends Activity {
     private static final int EXPORT = 1, IMPORT = 2;
@@ -45,8 +45,13 @@ public final class SaveTransferActivity extends Activity {
     // banner's rate-up units on top. Weights are normalised per draw, so 5x on a 1% tier is about 4.8%.
     static final String[] RARE = {"1", "2", "5", "10"};
     static final String[] FEATURED = {"1", "2", "4"};
+    // Lapis gain multiplier: every lapis credit (missions, rank-ups, quests, mail) is scaled; spending isn't.
+    static final String[] LAPIS = {"1", "2", "3", "5", "10"};
+    // Lapis summon price: the banner's own price, half, or 1 lapis for any lapis summon (single or multi).
+    static final String[] COST = {"original", "half", "1"};
+    private static final String[] COST_LABELS = {"Normal", "Half", "1 lapis"};
     private static final String[] RARE_RARITIES = {"5", "6", "7"};
-    private String rare = "1", featured = "1";
+    private String rare = "1", featured = "1", lapis = "1", cost = "original";
     private TextView status;
 
     static String speed(android.content.Context context) {
@@ -55,13 +60,13 @@ public final class SaveTransferActivity extends Activity {
     }
 
     static File tweaksFile(android.content.Context context) {
-        return new File(context.getFilesDir(), "exvius/gacha_tweaks.json");
+        return new File(context.getFilesDir(), "exvius/tweaks.json");
     }
 
-    /** {rare, featured} when the file holds one of this screen's choices (no file = {"1","1"}), else null. */
+    /** {rare, featured, lapis, cost} when the file holds this screen's choices (no file = defaults), else null. */
     static String[] readTweaks(android.content.Context context) {
         File file = tweaksFile(context);
-        if (!file.isFile()) return new String[]{"1", "1"};
+        if (!file.isFile()) return new String[]{"1", "1", "1", "original"};
         try {
             JSONObject root = new JSONObject(new String(readAll(new FileInputStream(file)), StandardCharsets.UTF_8));
             JSONObject rarity = root.optJSONObject("rarity_multiplier");
@@ -73,8 +78,11 @@ public final class SaveTransferActivity extends Activity {
                     if (!number(rarity.optDouble(key, -1)).equals(rareValue)) return null;
             }
             String featuredValue = number(root.optDouble("featured_multiplier", 1));
-            if (!Arrays.asList(RARE).contains(rareValue) || !Arrays.asList(FEATURED).contains(featuredValue)) return null;
-            return new String[]{rareValue, featuredValue};
+            String lapisValue = number(root.optDouble("lapis_multiplier", 1));
+            String costValue = root.optString("lapis_summon_cost", "original");
+            if (!Arrays.asList(RARE).contains(rareValue) || !Arrays.asList(FEATURED).contains(featuredValue) ||
+                !Arrays.asList(LAPIS).contains(lapisValue) || !Arrays.asList(COST).contains(costValue)) return null;
+            return new String[]{rareValue, featuredValue, lapisValue, costValue};
         } catch (Exception error) {
             return null;
         }
@@ -84,11 +92,13 @@ public final class SaveTransferActivity extends Activity {
         return value == Math.rint(value) ? String.valueOf((long) value) : String.valueOf(value);
     }
 
-    /** Writes the summon multipliers atomically; both at 1 removes the file (the banner's own rates). */
-    static void writeTweaks(android.content.Context context, String rareValue, String featuredValue) throws Exception {
+    /** Writes the multipliers atomically; all at 1 removes the file (the game's own numbers). */
+    static void writeTweaks(android.content.Context context, String rareValue, String featuredValue,
+                            String lapisValue, String costValue) throws Exception {
         File file = tweaksFile(context);
-        if ("1".equals(rareValue) && "1".equals(featuredValue)) {
-            if (file.isFile() && !file.delete()) throw new IOException("Could not reset the summon rates");
+        if ("1".equals(rareValue) && "1".equals(featuredValue) && "1".equals(lapisValue) &&
+                "original".equals(costValue)) {
+            if (file.isFile() && !file.delete()) throw new IOException("Could not reset the multipliers");
             return;
         }
         JSONObject rarity = new JSONObject();
@@ -97,9 +107,11 @@ public final class SaveTransferActivity extends Activity {
         JSONObject root = new JSONObject();
         root.put("rarity_multiplier", rarity);
         root.put("featured_multiplier", Double.parseDouble(featuredValue));
+        root.put("lapis_multiplier", Double.parseDouble(lapisValue));
+        root.put("lapis_summon_cost", costValue);
         File folder = file.getParentFile();
         if (folder != null && !folder.isDirectory() && !folder.mkdirs()) throw new IOException("Cannot create the data folder");
-        File partial = new File(folder, "gacha_tweaks.json.tmp");
+        File partial = new File(folder, "tweaks.json.tmp");
         try (FileOutputStream output = new FileOutputStream(partial)) {
             output.write(root.toString(2).getBytes(StandardCharsets.UTF_8));
             output.getFD().sync();
@@ -157,14 +169,19 @@ public final class SaveTransferActivity extends Activity {
         }));
         String[] tweaks = readTweaks(this);
         boolean custom = tweaks == null;
-        if (!custom) { rare = tweaks[0]; featured = tweaks[1]; }
+        if (!custom) { rare = tweaks[0]; featured = tweaks[1]; lapis = tweaks[2]; cost = tweaks[3]; }
         TextView rareLabel = label(custom ?
-            "Summon rates: a custom gacha_tweaks.json is in use. Picking an option below replaces it.\n\n5\u2605 and Neo Vision chance" :
+            "Summon and lapis settings: a custom tweaks.json is in use. Picking an option below replaces it.\n\n5\u2605 and Neo Vision chance" :
             "Summon rates (the Drop Rates screen shows the exact odds)\n\n5\u2605 and Neo Vision chance", padding);
         page.addView(rareLabel);
-        page.addView(choices(RARE, custom ? "" : rare, 2000, value -> saveTweaks(value, featured)));
+        page.addView(choices(RARE, custom ? "" : rare, 2000, value -> saveTweaks(value, featured, lapis, cost)));
         page.addView(label("Rate-up units on top of that", 0));
-        page.addView(choices(FEATURED, custom ? "" : featured, 3000, value -> saveTweaks(rare, value)));
+        page.addView(choices(FEATURED, custom ? "" : featured, 3000, value -> saveTweaks(rare, value, lapis, cost)));
+        page.addView(label("Lapis gained (missions, rank-ups, quests, mail; spending unchanged)", padding));
+        page.addView(choices(LAPIS, custom ? "" : lapis, 4000, value -> saveTweaks(rare, featured, value, cost)));
+        page.addView(label("Lapis summon price (reopen the summon screen to see it)", padding));
+        page.addView(choices(COST, COST_LABELS, custom ? "" : cost, 5000,
+            value -> saveTweaks(rare, featured, lapis, value)));
         page.addView(label("Save backup", padding));
         Button export = new Button(this);
         export.setText("Export save to a file");
@@ -192,15 +209,21 @@ public final class SaveTransferActivity extends Activity {
         return view;
     }
 
-    /** One row of radio buttons labelled "<value>x"; ids are base + index so each row stays distinct. */
+    /** One row of radio buttons (labelled "<value>x" unless given labels); ids are base + index. */
     private RadioGroup choices(String[] values, String current, int base, Choice onPick) {
+        String[] labels = new String[values.length];
+        for (int i = 0; i < values.length; i++) labels[i] = values[i] + "x";
+        return choices(values, labels, current, base, onPick);
+    }
+
+    private RadioGroup choices(String[] values, String[] labels, String current, int base, Choice onPick) {
         RadioGroup group = new RadioGroup(this);
         group.setOrientation(RadioGroup.HORIZONTAL);
         group.setGravity(Gravity.CENTER);
         for (int i = 0; i < values.length; i++) {
             RadioButton option = new RadioButton(this);
             option.setId(base + i);
-            option.setText(values[i] + "x");
+            option.setText(labels[i]);
             option.setChecked(values[i].equals(current));
             group.addView(option);
         }
@@ -211,18 +234,21 @@ public final class SaveTransferActivity extends Activity {
         return group;
     }
 
-    private void saveTweaks(String rareValue, String featuredValue) {
+    private void saveTweaks(String rareValue, String featuredValue, String lapisValue, String costValue) {
         try {
-            writeTweaks(this, rareValue, featuredValue);
+            writeTweaks(this, rareValue, featuredValue, lapisValue, costValue);
             rare = rareValue;
             featured = featuredValue;
-            status.setText("1".equals(rareValue) && "1".equals(featuredValue) ?
-                "Summon rates are back to each banner's own rates." :
-                "Summon rates: 5\u2605/NV x" + rareValue + ", rate-up units x" + featuredValue +
-                ". Applies from your next summon.");
+            lapis = lapisValue;
+            cost = costValue;
+            String price = COST_LABELS[Math.max(0, Arrays.asList(COST).indexOf(costValue))].toLowerCase(Locale.ROOT);
+            status.setText(!tweaksFile(this).isFile() ?
+                "Summon rates, lapis gains and prices are back to the game's own numbers." :
+                "5\u2605/NV summons x" + rareValue + ", rate-up units x" + featuredValue +
+                ", lapis gained x" + lapisValue + ", lapis summon price " + price + ". Applies right away.");
         } catch (Exception error) {
-            android.util.Log.w("ExviusSave", "Summon rate setting failed", error);
-            status.setText("Couldn't save the summon rates: " +
+            android.util.Log.w("ExviusSave", "Multiplier setting failed", error);
+            status.setText("Couldn't save the setting: " +
                 (error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage()));
         }
     }
