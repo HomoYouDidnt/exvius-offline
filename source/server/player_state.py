@@ -1154,9 +1154,10 @@ def expand_pool(banner: dict) -> list:
     expands to every base-rarity root of that rarity; `featured` units take `featured_share` of the tier
     (split equally) and the non-featured take the remainder. This keeps `gacha_authored.json` small and the
     pool real -- the unit catalogue is shipped data."""
+    from gacha_tweaks import adjust_rows   # the player's rate multipliers (Exvius Settings)
     pool = banner.get("pool")
     if isinstance(pool, list):
-        return _only_named(pool)
+        return adjust_rows(_only_named(pool))
     roots = unit_roots_by_rarity()
     # Retail summons (Lapis, tickets) never drew the 9xxxxxxxx fusion/material units (moogles, pots):
     # those come from the Friend Point summon and events. Only a friend-point banner keeps them.
@@ -1171,6 +1172,7 @@ def expand_pool(banner: dict) -> list:
         top = max(tiers, key=lambda t: int(t.get("rarity") or 0))
         tiers = [dict(t, featured=rate_up, featured_share=0.5) if t is top else t for t in tiers]
     out: list = []
+    featured_ids: set = set()
     for tier in tiers:
         rate = max(0.0, float(tier.get("rate", 0)))
         if rate <= 0:
@@ -1183,6 +1185,7 @@ def expand_pool(banner: dict) -> list:
         if not units:
             continue
         featured = [u for u in (str(x) for x in (tier.get("featured") or [])) if u in units]
+        featured_ids.update(featured)
         if featured:
             share = min(1.0, max(0.0, float(tier.get("featured_share", 0.0))))
             f_rate = rate * share / len(featured)
@@ -1200,7 +1203,7 @@ def expand_pool(banner: dict) -> list:
                 rarity = (unit_mst(u) or {}).get("9fW0TePj", tier.get("rarity")) if explicit_units \
                     else tier.get("rarity")
                 out.append({"unit_id": u, "rarity": rarity, "rate": per})
-    return _only_named(out)
+    return adjust_rows(_only_named(out), featured_ids)
 
 
 def team_level_mst(level) -> dict | None:
