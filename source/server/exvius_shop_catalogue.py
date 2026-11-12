@@ -14,6 +14,29 @@ from ffbe_state import State
 START = '2020-01-01 00:00:00'
 END = '2099-12-31 23:59:59'
 
+# Currencies the player can still earn but whose shops were never served. Their whole original
+# F_MEDAL_EXCHANGE_MST stock is offered, not only the fragment rows (#18, #23, #70).
+FULL_STOCK = {
+    '1209002122': 'Celebratory Lapis Replica (8th Anniversary)',  # United Forces / clash rewards
+    '1209001907': 'Exchange Ticket (Original Armory IV)',  # United Forces step 3
+    '1209002145': "Exchange Ticket (It's a Celebration, Kupo!)",  # United Forces step 6
+    '1209002102': 'NV Unit Select Ticket (8th Anniversary)',  # bought with Lapis Replicas
+    '1209002103': 'VC Select Ticket (8th Anniversary)',  # bought with Lapis Replicas
+    '1209002138': 'Summon Coin (C.K.Rain/H.R.Taivas)',
+    '1209002139': 'NV Exchange Ticket (C.K.Rain/H.R.Taivas)',
+    '1209002140': 'Exchange Ticket (Hero of Elmont)',
+    '1209002141': 'Summon Coin (A.K.Lasswell)',
+    '1209002142': 'NV Exchange Ticket (A.K.Lasswell)',
+    '1209002143': 'Summon Coin (A.C.B.Rhus)',
+    '1209002144': 'NV Exchange Ticket (A.C.B.Rhus)',
+    '1209001045': 'Summon Coin (Sora/Cloud (KH))',
+    '1209001046': 'Summon Coin (Riku/Sephiroth (KH))',
+    '1209001298': 'Summon Coin (KHIII)',
+}
+# The NV Fragment Select Ticket (8th Anniversary) has no exchange rows of its own, so selling it
+# would only mint another dead ticket.
+SKIP_PRODUCTS = {'258031'}
+
 
 @lru_cache(maxsize=1)
 def catalogue():
@@ -24,7 +47,12 @@ def catalogue():
         row = json.loads(line)
         names[row['key'].rsplit('_', 1)[-1]] = row['v'][0]
     currencies = defaultdict(list)
+    full = defaultdict(list)
     for row in _rows('F_MEDAL_EXCHANGE_MST'):
+        if str(row.get('ak2dhKm3')) in FULL_STOCK:
+            if str(row.get('S21FT3L8')) not in SKIP_PRODUCTS:
+                full[str(row['ak2dhKm3'])].append(row)
+            continue
         if not str(row.get('7iJpH5zZ', '')).startswith('20:250'):
             continue
         rewards = parse(row.get('7iJpH5zZ'))
@@ -83,6 +111,17 @@ def catalogue():
         for position, row in enumerate(shop['products']):
             product(940001000 + index * 1000 + position, did, row['reward'], row['price'],
                     row['limit'], (kind, currency), shop['reset_months'])
+    # Same product ids as the fragment loop, so purchases made there still count.
+    for index, currency in enumerate(FULL_STOCK):
+        stock = full.get(currency)
+        if not stock:
+            continue
+        did = 850002000 + index
+        detail(did, names.get(currency, FULL_STOCK[currency]), 20, currency, 4)
+        for row in stock:
+            limit = int(row['x0NDnEC9']) if row['kR4n5DxP'] == '1' else 2147483647
+            product(900000000 + int(row['S21FT3L8']), did, row['7iJpH5zZ'], row['Qy5EvcK1'],
+                    limit, (20, currency))
     return details, products, offers
 
 

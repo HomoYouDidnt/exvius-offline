@@ -384,6 +384,26 @@ def with_global_buttons(b: dict) -> dict:
         if b.get("provenance") == "community":
             # The community art promises "a guaranteed 5★/NV unit with every 11 summon".
             b["secondary_offer"]["guarantee"] = {"rarity": 5}
+    return _with_collab_coins(b)
+
+
+# The Kingdom Hearts coins came from premium step-ups that were never preserved, so their exchange
+# shops had no source (#70). Each 11-summon on a KH banner pays that banner's coin instead.
+# (banner name fragment, coin item id, coins per 11-summon); KHIII units cost 10 coins, prisms 140.
+KH_COINS = [('Sora (KHIII)', 1209001298, 1),
+            ('Sora, Cloud (KH)', 1209001045, 10),
+            ('Riku, Sephiroth (KH)', 1209001046, 10)]
+
+
+def _with_collab_coins(b: dict) -> dict:
+    sec = b.get('secondary_offer')
+    if not isinstance(sec, dict) or int(sec.get('draws') or 1) != 11 or sec.get('bonus_rewards'):
+        return b
+    name = str(b.get('name') or '')
+    for fragment, coin, count in KH_COINS:
+        if fragment in name:
+            b['secondary_offer'] = dict(sec, bonus_rewards=[{'kind': 20, 'id': coin, 'count': count}])
+            break
     return b
 def _gacha_cost_string(cost, draws: int = 1, item_id: int = 0) -> str:
     """`GachaDetailMst.costInfo` (0GgK6ytT) = `entry ("," entry)*`, each `kind:itemId:useCost:exeCount`
