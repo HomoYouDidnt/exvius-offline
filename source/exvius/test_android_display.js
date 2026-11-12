@@ -72,6 +72,9 @@ assert.equal(anchorLayout('gacha_scroll_area', {x:0,y:300,width:640,height:700},
 const enhancementList = {x:0,y:490,width:640,height:475};
 assert.deepEqual(anchorLayout('unit_enhance_common_scrl_area', enhancementList, reference, canvas),
   enhancementList);
+const townList = {x:0,y:375,width:638,height:598};
+assert.deepEqual(anchorLayout('town_menu_scroll_area', townList, reference, canvas), townList,
+  'Town fast-travel list must stop above its bottom bar');
 assert.deepEqual(anchorLayout('gacha_item_list', {x:0,y:300,width:640,height:100}, reference, canvas), {x:0,y:300,width:640,height:100});
 for (const [name, box] of [
   ['departure_item_scrl_area', {x:330,y:625,width:300,height:245}],

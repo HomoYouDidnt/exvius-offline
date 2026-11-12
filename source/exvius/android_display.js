@@ -35,6 +35,8 @@ export function isTallList(name, box, reference = {height: 1136}) {
   if (name.startsWith('home_') || /dialog|popup|tooltip/i.test(name)) return false;
   // Enhancement's fixed Confirm row sits immediately below its scroll area.
   if (/^unit_enhance_common_(?:scrl_area|scrl_bar|clip_area)$/.test(name)) return false;
+  // Town fast-travel list ends at the Quest Report/Back bar (y 972); stretching it put rows behind that bar (#65, #30).
+  if (/^town_menu_scroll_(?:area|bar)$/.test(name)) return false;
   // The original Crests lists end at 909/911, above their separate note.
   // Their row mask is a different entry and must keep its 154px height.
   if (/^(?:clip_area|scrl_area|scrl_bar)_(?:wkreward|mthreward|mthtier)(?:_offset)?$/.test(name)) return true;
