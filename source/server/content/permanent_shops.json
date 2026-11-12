@@ -2499,6 +2499,23 @@
           "limit": 2
         }
       ]
+    },
+    {
+      "name": "Super Trust Moogle Exchange",
+      "source": "Local replacement for Global's Super Trust Moogle Exchange Ticket (item 106211340): one ticket buys one generic 100% Super Trust Moogle, the same reward the United Forces Step-Up and catch-up bonuses grant.",
+      "currency": [
+        20,
+        "106211340"
+      ],
+      "category": 4,
+      "reset_months": 0,
+      "products": [
+        {
+          "reward": "10:906000105:1:100:1:0:0:0:1100000100",
+          "price": 1,
+          "limit": 2147483647
+        }
+      ]
     }
   ]
 }

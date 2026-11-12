@@ -108,9 +108,12 @@ def labels():
     for pid, offer in catalogue()[2].items():
         texts = []
         for row in offer['rewards']:
-            name = names[row['kind'], str(row['id'])]
-            if row.get('affinity_points', [''])[0]:
-                name += ' (ALL ' + str(int(row['affinity_points'][0]) // 10) + '%)'
+            name = names.get((row['kind'], str(row['id'])), 'Reward ' + str(row['id']))
+            points = list(row.get('affinity_points') or []) + ['', '']
+            if points[0]:
+                name += ' (ALL ' + str(int(points[0]) // 10) + '%)'
+            elif points[1]:
+                name += ' (Super Trust ' + str(int(points[1]) // 10) + '%)'
             if row['count'] > 1:
                 name += ' x' + str(row['count'])
             texts.append(name)
