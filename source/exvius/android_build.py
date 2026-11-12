@@ -295,8 +295,8 @@ def main():
     intent = ET.SubElement(launcher, 'intent-filter')
     ET.SubElement(intent, 'action', {ANDROID + 'name': 'android.intent.action.MAIN'})
     ET.SubElement(intent, 'category', {ANDROID + 'name': 'android.intent.category.LAUNCHER'})
-    # A second launcher icon for exporting and importing the campaign save. The game opens straight
-    # from the main icon, and an import must happen while the game is closed.
+    # A second launcher icon for game speed and for exporting and importing the campaign save. The game
+    # opens straight from the main icon, and an import must happen while the game is closed.
     for activity in list(app.findall('activity')):
         if activity.get(ANDROID + 'name') == 'com.exvius.local.SaveTransferActivity':
             app.remove(activity)
@@ -304,8 +304,8 @@ def main():
         ANDROID + 'name': 'com.exvius.local.SaveTransferActivity',
         ANDROID + 'exported': 'true', ANDROID + 'screenOrientation': 'portrait',
         ANDROID + 'theme': '@android:style/Theme.Material.NoActionBar',
-        ANDROID + 'label': 'Exvius Save Backup',
-        ANDROID + 'taskAffinity': test_package + '.savebackup',
+        ANDROID + 'label': 'Exvius Settings',
+        ANDROID + 'taskAffinity': test_package + '.settings',
     })
     intent = ET.SubElement(backup, 'intent-filter')
     ET.SubElement(intent, 'action', {ANDROID + 'name': 'android.intent.action.MAIN'})

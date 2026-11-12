@@ -7,6 +7,8 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.TextView;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -30,14 +32,20 @@ import org.json.JSONObject;
  *
  * The save lives in the app's private storage, so uninstalling the app or clearing its storage erases it,
  * and a build signed with a different key can only be installed after uninstalling. This screen is the
- * way to carry a save across any of those. It has its own launcher icon ("Exvius Save Backup") because
- * the game itself starts straight from the main icon.
+ * way to carry a save across any of those. It has its own launcher icon ("Exvius Settings") because
+ * the game itself starts straight from the main icon. The same screen holds the game speed setting.
  */
 public final class SaveTransferActivity extends Activity {
     private static final int EXPORT = 1, IMPORT = 2;
     private static final long MAX_SAVE = 64L * 1024 * 1024;
     private static final int KEEP_AUTO_BACKUPS = 5;
+    static final String[] SPEEDS = {"1", "1.5", "2", "3"};
     private TextView status;
+
+    static String speed(android.content.Context context) {
+        String value = context.getSharedPreferences("exvius_settings", MODE_PRIVATE).getString("game_speed", "1");
+        return Arrays.asList(SPEEDS).contains(value) ? value : "1";
+    }
 
     static File stateDir(android.content.Context context) {
         return new File(context.getFilesDir(), "exvius/state");
@@ -73,7 +81,7 @@ public final class SaveTransferActivity extends Activity {
         int padding = (int) (24 * getResources().getDisplayMetrics().density);
         page.setPadding(padding, padding, padding, padding);
         TextView title = new TextView(this);
-        title.setText("Exvius Save Backup");
+        title.setText("Exvius Settings");
         title.setTextSize(28);
         title.setGravity(Gravity.CENTER);
         page.addView(title);
@@ -82,6 +90,36 @@ public final class SaveTransferActivity extends Activity {
         status.setGravity(Gravity.CENTER);
         status.setPadding(0, padding, 0, padding);
         page.addView(status);
+        TextView speedLabel = new TextView(this);
+        speedLabel.setText("Game speed (whole game, applies within a few seconds)");
+        speedLabel.setTextSize(15);
+        speedLabel.setGravity(Gravity.CENTER);
+        page.addView(speedLabel);
+        RadioGroup speeds = new RadioGroup(this);
+        speeds.setOrientation(RadioGroup.HORIZONTAL);
+        speeds.setGravity(Gravity.CENTER);
+        String current = speed(this);
+        for (int i = 0; i < SPEEDS.length; i++) {
+            RadioButton option = new RadioButton(this);
+            option.setId(1000 + i);
+            option.setText(SPEEDS[i] + "x");
+            option.setChecked(SPEEDS[i].equals(current));
+            speeds.addView(option);
+        }
+        speeds.setOnCheckedChangeListener((group, id) -> {
+            int index = id - 1000;
+            if (index < 0 || index >= SPEEDS.length) return;
+            getSharedPreferences("exvius_settings", MODE_PRIVATE).edit()
+                .putString("game_speed", SPEEDS[index]).apply();
+            status.setText("Game speed set to " + SPEEDS[index] + "x.");
+        });
+        page.addView(speeds);
+        TextView saveLabel = new TextView(this);
+        saveLabel.setText("Save backup");
+        saveLabel.setTextSize(15);
+        saveLabel.setGravity(Gravity.CENTER);
+        saveLabel.setPadding(0, padding, 0, 0);
+        page.addView(saveLabel);
         Button export = new Button(this);
         export.setText("Export save to a file");
         export.setOnClickListener(view -> startExport());
@@ -115,7 +153,7 @@ public final class SaveTransferActivity extends Activity {
         if (DataUpdates.gameOpened() || LocalGameBridge.started()) {
             // The running game keeps the save in memory and would write over an imported file.
             status.setText("Exvius is still running. Swipe it away from your recent apps, then open " +
-                "Exvius Save Backup again to import.");
+                "Exvius Settings again to import.");
             return;
         }
         startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT)
@@ -153,7 +191,7 @@ public final class SaveTransferActivity extends Activity {
                 zip.write(save);
                 zip.closeEntry();
                 zip.putNextEntry(new ZipEntry("README.txt"));
-                zip.write(("Exvius Offline save. Import it with the Exvius Save Backup icon.\n").getBytes(StandardCharsets.UTF_8));
+                zip.write(("Exvius Offline save. Import it with the Exvius Settings icon.\n").getBytes(StandardCharsets.UTF_8));
                 zip.closeEntry();
             }
         }

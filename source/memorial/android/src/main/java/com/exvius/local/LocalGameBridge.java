@@ -254,6 +254,16 @@ public final class LocalGameBridge {
         return module.callAttr("raid_action", game, actor, skill, party).toBoolean();
     }
 
+    /**
+     * Game speed chosen on the Exvius Settings screen ("1", "1.5", "2" or "3"). Read from the game's render
+     * thread every few seconds, so it is deliberately not synchronized on the request lock.
+     */
+    public static String gameSpeed() {
+        Context owner = context;
+        if (owner == null) return "1";
+        return SaveTransferActivity.speed(owner);
+    }
+
     /** True once the local engine has loaded the save into memory in this process. */
     static synchronized boolean started() { return game != null; }
 

@@ -451,13 +451,29 @@ rpc.exports = {
         }));
         let frames = 0;
         let firstTime = 0;
+        // The player's speed from the Exvius Settings screen. TEST builds keep their fixed 10x.
+        let playerScale = 1, writtenScale = 1;
+        const readPlayerScale = () => {
+          if (scale !== 1) return;
+          try {
+            const chosen = Number(bridge('gameSpeed', '()Ljava/lang/String;', []));
+            const next = [1, 1.5, 2, 3].includes(chosen) ? chosen : 1;
+            if (next !== playerScale) note('PLAYER_SPEED scale=' + next);
+            playerScale = next;
+          } catch (error) {
+            playerScale = 1;
+          }
+        };
         retained.push(Interceptor.attach(update, {
           onEnter(args) {
             // GL9 arm64 constructor and update disassembly both identify this float.
-            if (scale !== 1) {
+            if (frames % 300 === 0) readPlayerScale();
+            const effective = scale !== 1 ? scale : playerScale;
+            if (effective !== 1 || writtenScale !== 1) {
               const timeScale = args[0].add(0x24);
-              timeScale.writeFloat(scale);
-              if (timeScale.readFloat() !== scale) throw new Error('Game-time speed verification failed.');
+              timeScale.writeFloat(effective);
+              if (timeScale.readFloat() !== effective) throw new Error('Game-time speed verification failed.');
+              writtenScale = effective;
             }
             frames += 1;
             if (frames === 1) {
