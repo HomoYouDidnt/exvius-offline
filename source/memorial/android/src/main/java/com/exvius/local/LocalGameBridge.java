@@ -254,6 +254,9 @@ public final class LocalGameBridge {
         return module.callAttr("raid_action", game, actor, skill, party).toBoolean();
     }
 
+    /** True once the local engine has loaded the save into memory in this process. */
+    static synchronized boolean started() { return game != null; }
+
     private static void ensureGame() {
         if (game != null) return;
         if (context == null) throw new IllegalStateException("Local game provider is not ready");

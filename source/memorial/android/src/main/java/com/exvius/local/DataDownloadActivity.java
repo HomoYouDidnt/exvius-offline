@@ -75,6 +75,7 @@ public final class DataDownloadActivity extends Activity implements DataUpdates.
             failed("The game assets could not be opened. Connect to the internet and tap Retry to repair them.");
             return;
         }
+        SaveTransferActivity.autoBackup(this);
         if (checkForUpdates) DataUpdates.checkInBackground(this);
         Intent game = new Intent();
         game.setClassName(getPackageName(), "com.square_enix.android_googleplay.FFBEWW.Lapis");
