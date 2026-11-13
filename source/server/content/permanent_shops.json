@@ -2516,6 +2516,28 @@
           "limit": 2147483647
         }
       ]
+    },
+    {
+      "name": "Moogle Shop",
+      "source": "Local addition: 100% Trust and Super Trust Moogles for gil, no buy limit, at the 300 King Mog charges in star quartz for his Trust Moogle.",
+      "currency": [
+        30,
+        "1"
+      ],
+      "category": 6,
+      "reset_months": 0,
+      "products": [
+        {
+          "reward": "10:904000105:1:100:1:0:100000100",
+          "price": 300,
+          "limit": 2147483647
+        },
+        {
+          "reward": "10:906000105:1:100:1:0:0:0:1100000100",
+          "price": 300,
+          "limit": 2147483647
+        }
+      ]
     }
   ]
 }

@@ -1240,7 +1240,7 @@ class LocalGameIntegration(unittest.TestCase):
         self.assertLessEqual(sold, _units_with_icons())
         self.assertNotIn('332000105', sold)
         coin_shops = [r for r in reply['F2rNo6qf'] if r['JV8AIH3n'] == '6']
-        self.assertEqual(len(coin_shops), 3 + len(unit_tabs))
+        self.assertEqual(len(coin_shops), 4 + len(unit_tabs))
         self.assertTrue(all(r['0GgK6ytT'] == '30:1' for r in coin_shops))
         self.assertTrue(all(r['0GgK6ytT'] != '30:1' for r in reply['F2rNo6qf']
                             if r['JV8AIH3n'] in ('4', '5')))
@@ -1300,6 +1300,29 @@ class LocalGameIntegration(unittest.TestCase):
         saved = copy.deepcopy(player.data)
         self.exchange('GachaSelectExchangeExeRequest',
                       {'4mrD6JuA': [{'jPV7Xc4N': '940000009', 'Qy5EvcK1': '1'}]})
+        self.assertEqual(player.data, saved)
+
+    def test_moogle_shop_sells_full_trust_moogles_for_gil_without_limit(self):
+        from exvius_shop_catalogue import catalogue
+        details, products, offers = catalogue()
+        shop = next(r for r in details if r['6uvHX2JG'] == 'Moogle Shop')
+        self.assertEqual((shop['JV8AIH3n'], shop['0GgK6ytT']), ('6', '30:1'))
+        player = self.game.server.State.player
+        player.currencies['gil'] = 1000
+        before = len(player.data['roster'])
+        for pid, unit, channel in (('940018000', '904000105', 0), ('940018001', '906000105', 1)):
+            offer = offers[pid]
+            self.assertEqual((offer['detail'], offer['price'], offer['limit']),
+                             (shop['3X1gLufw'], 300, 2147483647))
+            self.assertEqual(offer['rewards'][0]['affinity_points'][channel], '1000')
+            self.exchange('GachaSelectExchangeExeRequest',
+                          {'4mrD6JuA': [{'jPV7Xc4N': pid, 'Qy5EvcK1': '1'}]})
+            self.assertEqual(str(player.data['roster'][-1]['master_id']), unit)
+        self.assertEqual(player.currencies['gil'], 400)
+        self.assertEqual(len(player.data['roster']), before + 2)
+        saved = copy.deepcopy(player.data)
+        self.exchange('GachaSelectExchangeExeRequest',
+                      {'4mrD6JuA': [{'jPV7Xc4N': '940018000', 'Qy5EvcK1': '2'}]})
         self.assertEqual(player.data, saved)
 
     def test_real_stage_other_challenge_rewards_stay_one_time(self):
