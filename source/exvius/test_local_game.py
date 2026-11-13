@@ -1335,7 +1335,8 @@ class LocalGameIntegration(unittest.TestCase):
         gear = {(kind, iid): price for _, kind, items in tabs for iid, _, price in items}
         self.assertGreater(len([k for k in gear if k[0] == 21]), 500)
         self.assertGreater(len([k for k in gear if k[0] == 22]), 250)
-        gear_details = {r['3X1gLufw'] for r in details if r['6uvHX2JG'].startswith('Gear Shop')}
+        gear_details = {r['3X1gLufw'] for r in details if r['6uvHX2JG'].startswith('Gear Shop')
+                        and r['6uvHX2JG'] != 'Gear Shop: Ariana'}
         self.assertTrue(all(r['JV8AIH3n'] == '6' and r['0GgK6ytT'] == '30:1'
                             for r in details if r['3X1gLufw'] in gear_details))
         rows = [r for r in products if r['3X1gLufw'] in gear_details]
@@ -1384,6 +1385,47 @@ class LocalGameIntegration(unittest.TestCase):
                       {'4mrD6JuA': [{'jPV7Xc4N': row['jPV7Xc4N'], 'Qy5EvcK1': '3'}]})
         self.assertEqual(player.currencies['gil'], 0)
         self.assertEqual(player.item_count(20, iid), before + 3)
+
+    def test_ariana_tab_sells_the_collab_gear_for_gil(self):
+        from exvius_shop_catalogue import catalogue, ARIANA_GEAR, ARIANA_SHOP_PRICE
+        details, products, offers = catalogue()
+        tab = next(r for r in details if r['6uvHX2JG'] == 'Gear Shop: Ariana')
+        self.assertEqual((tab['JV8AIH3n'], tab['0GgK6ytT']), ('6', '30:1'))
+        rows = [r for r in products if r['3X1gLufw'] == tab['3X1gLufw']]
+        self.assertEqual(sorted(r['P4puB2ch'] for r in rows),
+                         sorted('%d:%s:1' % gear for gear in ARIANA_GEAR))
+        self.assertTrue(all(int(r['e4mG8jTc']) == ARIANA_SHOP_PRICE for r in rows))
+        row = next(r for r in rows if r['P4puB2ch'] == '22:1500000011:1')
+        player = self.game.server.State.player
+        player.currencies['gil'] = ARIANA_SHOP_PRICE
+        before = player.item_count(22, '1500000011')
+        self.exchange('GachaSelectExchangeExeRequest',
+                      {'4mrD6JuA': [{'jPV7Xc4N': row['jPV7Xc4N'], 'Qy5EvcK1': '1'}]})
+        self.assertEqual(player.currencies['gil'], 0)
+        self.assertEqual(player.item_count(22, '1500000011'), before + 1)
+
+    def test_unit_shop_sells_units_at_top_rarity_and_maxed(self):
+        from exvius_shop_catalogue import catalogue, top_unit_ids
+        from player_state import STAT_TOKENS, max_level, unit_mst
+        details, products, offers = catalogue()
+        pid = str(1000000000 + 401000104)
+        self.assertEqual(offers[pid]['rewards'][0]['id'], int(top_unit_ids()['401000104']))
+        top = str(offers[pid]['rewards'][0]['id'])
+        self.assertGreater(int(unit_mst(top)['9fW0TePj']), 4)
+        player = self.game.server.State.player
+        player.currencies['gil'] = 10
+        before = len(player.data['roster'])
+        self.exchange('GachaSelectExchangeExeRequest',
+                      {'4mrD6JuA': [{'jPV7Xc4N': pid, 'Qy5EvcK1': '1'}]})
+        self.assertEqual(len(player.data['roster']), before + 1)
+        unit = player.data['roster'][-1]
+        self.assertEqual(str(unit['master_id']), top)
+        self.assertEqual(int(unit['level']), max_level(top))
+        master = unit_mst(top)
+        caps = [list(map(int, master[t].split(',')))[2:4] for t in STAT_TOKENS]
+        self.assertEqual(unit['stat_doors'], [door for _, door in caps])
+        self.assertEqual(unit['stat_pots'], [pot + door for pot, door in caps])
+        self.assertGreaterEqual(int(unit.get('lb_level') or 0), 1)
 
     def test_real_stage_other_challenge_rewards_stay_one_time(self):
         player = self.game.server.State.player

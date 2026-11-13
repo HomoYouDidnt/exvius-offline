@@ -39,6 +39,8 @@ SKIP_PRODUCTS = {'258031'}
 
 # Unit Shop: every unit a summon could give, one copy per purchase, priced by player_tweaks
 # (1 lapis or free). Long lists are split into tabs of at most UNIT_SHOP_TAB units, by name.
+# Each unit comes at its family's top rarity, maxed out (max_out_unit): max level, full stat pots
+# and doors, and its Limit Burst at its top level.
 UNIT_SHOP_TAB = 250
 UNIT_SHOP_GROUPS = (('7', 'Neo Vision'), ('5', '5\u2605 base'), ('4', '4\u2605 base'),
                     ('3', '1-3\u2605 base'), ('2', '1-3\u2605 base'), ('1', '1-3\u2605 base'))
@@ -54,6 +56,14 @@ GEAR_SHOP_KINDS = ((21, 'ITEM_EQUIP', 'Equipment', ''), (22, 'MATERIA', 'Materia
 # Item Shop: the same for every other single reward a merchant exchange sold: items (awakening
 # materials, crystals, potions, event currencies), recipes, vision cards and tickets. Product ids
 # count up from ITEM_SHOP_PRODUCT the same way. 23:912 is left out: its icon is not in the item packs.
+# Gear Shop: Ariana: the Ariana Grande collaboration gear, which no merchant exchange sold: the four
+# Ariana units' Trust rewards, Encore (Dangerous Ariana's dualcast materia) and the event gear made
+# "for a famous singer". 1000 gil each, no buy limit; product ids ARIANA_SHOP_PRODUCT + list index.
+ARIANA_SHOP_PRODUCT = 974000000
+ARIANA_SHOP_PRICE = 1000
+ARIANA_GEAR = ((22, '504212570'), (22, '1500000025'), (22, '1500000033'), (21, '1100000119'),
+               (22, '1500000011'), (21, '316000900'), (21, '1100000098'), (21, '1100000099'),
+               (21, '1100000100'), (21, '1100000114'), (21, '1100000116'))
 ITEM_SHOP_PRODUCT = 975000000
 ITEM_SHOP_KINDS = ((20, 'ITEM', 'Items', ''), (60, 'RECIPE_BOOK', 'Recipes', ' (Recipe)'),
                    (27, 'VISION_CARD', 'Vision Cards', ''), (23, 'IMPORTANT_ITEM', 'Tickets', ''))
@@ -84,10 +94,12 @@ def unit_shops():
     (the award screen crashes on them), Brave Shift forms (another row's JPW8Vs40 points at them;
     they come with their NV unit), the 9xxxxxxxx material units (moogles, pots, cactuars) and units
     with no icon in the game data (the shop list crashes drawing them, e.g. Lara Croft, Ling, Xon).
-    Neo Vision units are the roots whose base rarity is 7."""
+    Neo Vision units are the roots whose base rarity is 7. Each entry is (root id, label, top id): the
+    top id is the family's highest named tier with an icon (top_unit_ids), which is what the shop sells."""
     names = _unit_names()
     icons = _units_with_icons()
     rows = _rows('F_UNIT_MST')
+    tops = top_unit_ids()
     shifted = {str(r.get('JPW8Vs40') or '') for r in rows
                if str(r.get('JPW8Vs40') or '') not in ('', '0', str(r.get('3HriTp6B')))}
     groups = defaultdict(list)
@@ -99,10 +111,11 @@ def unit_shops():
         title = dict(UNIT_SHOP_GROUPS).get(str(row.get('9fW0TePj')))
         if title is None:
             continue
-        label = names[uid]
+        top = tops.get(uid, uid)
+        label = names.get(top) or names[uid]
         if str(row.get('9fW0TePj')) == '7' and 'Neo Vision' not in label:
             label += ' (NV)'
-        groups[title].append((uid, label))
+        groups[title].append((uid, label, top))
     tabs = []
     for title in dict.fromkeys(t for _, t in UNIT_SHOP_GROUPS):
         units = sorted(groups.get(title, []), key=lambda u: (u[1].lower(), int(u[0])))
@@ -116,6 +129,54 @@ def unit_shops():
                 name += ' (' + (first if first.isalpha() else 'A') + '-' + last + ')'
             tabs.append((name, chunk))
     return tabs
+
+
+def top_unit_ids():
+    """{family root id: the family's highest tier} for the Unit Shop.
+
+    The pick is the highest (max level, rarity, id) among the family's F_UNIT_MST rows that have a name
+    row and an icon and are not a Brave Shift form (the same rule as player_state.top_named_unit_rows,
+    plus the icon check, because a unit with no icon crashes the shop list)."""
+    names = _unit_names()
+    icons = _units_with_icons()
+    rows = _rows('F_UNIT_MST')
+    shifted = {str(r.get('JPW8Vs40') or '') for r in rows
+               if str(r.get('JPW8Vs40') or '') not in ('', '0', str(r.get('3HriTp6B')))}
+    best = {}
+    for row in rows:
+        uid = str(row.get('3HriTp6B', ''))
+        if names.get(uid, '') in ('', '<na>') or uid not in icons or uid in shifted:
+            continue
+        key = (int(row.get('aU3o2D4t') or 0), int(row.get('9fW0TePj') or 0), int(uid))
+        root = str(row.get('woghJa61'))
+        if root not in best or key > best[root][0]:
+            best[root] = (key, uid)
+    return {root: uid for root, (_, uid) in best.items()}
+
+
+def max_out_unit(unit):
+    """Max a roster row the Unit Shop just granted: max level (player_state.max_unit), every stat's pots
+    and doors at the unit's caps, and its Limit Burst at the top level its tables allow."""
+    from player_state import STAT_TOKENS, limit_burst, unit_mst
+    State.player.max_unit(unit['instance_id'])
+    master = unit_mst(unit['master_id']) or {}
+    pots, doors = [], []
+    for token in STAT_TOKENS:
+        descriptor = [int(v) for v in str(master.get(token) or '').split(',') if v.strip().lstrip('-').isdigit()]
+        pot_cap, door_cap = (descriptor + [0, 0, 0, 0])[2:4]
+        doors.append(max(0, door_cap))
+        pots.append(max(0, pot_cap) + max(0, door_cap))
+    unit['stat_pots'], unit['stat_doors'] = pots, doors
+    lb = limit_burst(unit['master_id'])
+    if lb is not None:
+        levels = [int(r['7wV3QZ80']) for r in _rows('F_LIMITBURST_LV_MST')
+                  if r.get('PR2HIc71') == lb.get('PR2HIc71')]
+        if levels:
+            unit['lb_level'] = max(int(unit.get('lb_level') or 1),
+                                   min(max(levels), int(master.get('ENwn42DV') or 1)))
+            unit['lb_exp'] = 0
+    State.player.dirty = True
+    return unit
 
 
 def _split_tabs(prefix, items):
@@ -272,8 +333,8 @@ def catalogue():
     for index, (title, units) in enumerate(unit_shops()):
         did = 850003000 + index
         detail(did, title, SHOP_CURRENCY[0], SHOP_CURRENCY[1], 6)
-        for uid, label in units:
-            product(UNIT_SHOP_PRODUCT + int(uid), did, '10:' + uid + ':1', 1, 2147483647,
+        for uid, label, top in units:
+            product(UNIT_SHOP_PRODUCT + int(uid), did, '10:' + top + ':1', 1, 2147483647,
                     SHOP_CURRENCY, label=label)
             offers[str(UNIT_SHOP_PRODUCT + int(uid))]['unit_shop'] = True
     # Gear Shop tabs follow, also in gil with the coin shops.
@@ -285,6 +346,19 @@ def catalogue():
         for iid, label, price in items:
             product(gear_pid[kind, iid], did, str(kind) + ':' + iid + ':1', price, 2147483647,
                     SHOP_CURRENCY, label=label)
+    # The Ariana tab, after the other Gear Shop tabs.
+    gear_names = {}
+    for kind, table, _, _ in GEAR_SHOP_KINDS:
+        path = Path(TEXT_DIR) / ('F_TEXT_' + table + '_NAME.ndjson')
+        for line in path.read_text(encoding='utf-8').splitlines():
+            if line.strip():
+                row = json.loads(line)
+                gear_names[kind, row['key'].rsplit('_', 1)[-1]] = row['v'][0].strip()
+    detail(850004900, 'Gear Shop: Ariana', SHOP_CURRENCY[0], SHOP_CURRENCY[1], 6)
+    for index, (kind, iid) in enumerate(ARIANA_GEAR):
+        if gear_names.get((kind, iid)):
+            product(ARIANA_SHOP_PRODUCT + index, 850004900, str(kind) + ':' + iid + ':1',
+                    ARIANA_SHOP_PRICE, 2147483647, SHOP_CURRENCY, label=gear_names[kind, iid])
     # Item Shop tabs last: awakening materials and every other exchange reward, in gil.
     stock = item_shops()
     item_pid = {item: ITEM_SHOP_PRODUCT + index for index, item in
@@ -381,7 +455,12 @@ def purchase(spec, req):
         _require(State.player.spend_currency('gil', amount), 'not enough gil')
     else:
         _pay([{'kind': kind, 'id': currency, 'count': amount}])
+    roster = State.player.data.setdefault('roster', [])
+    before = len(roster)
     _grant(rewards)
+    if offer.get('unit_shop'):
+        for unit in roster[before:]:
+            max_out_unit(unit)
     counts[key] = bought + quantity
     _store('shop_catalogue', {'counts': counts})
     out = _reply(spec)

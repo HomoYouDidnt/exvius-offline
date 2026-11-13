@@ -28,11 +28,12 @@ A second launcher icon, **Exvius 2.0 Settings**, holds these. They apply without
 
 ### New shops
 
-- **Unit Shop:** every summonable unit that has an icon in the game data, 1,209 of them, for 1 gil each or free. They're split into tabs by rarity and name (NV, 5★, 4★ and 1-3★).
+- **Unit Shop:** every summonable unit that has an icon in the game data, 1,209 of them, for 1 gil each or free. Each comes at its top rarity (7★ where it has one) and maxed: max level, full stat pots and doors, and its Limit Burst at top level. They're split into tabs by base rarity and name (NV, 5★, 4★ and 1-3★).
 - **Gil instead of lapis:** bundles and the coin exchange shops (VIP, EX Coin, Daily Coin and the Unit Shop) cost gil, at the same number they used to cost in lapis.
 - **Super Trust Moogle exchange:** spend Super Trust Moogle Exchange Tickets on a 100% STMR moogle.
 - **Moogle Shop:** 100% Trust Moogles and 100% Super Trust Moogles for 300 gil each, no buy limit, with the other coin shops.
 - **Gear Shop:** every weapon, armor, accessory and materia the merchant exchanges sold (679 equipment, 344 materia), for the same number of gil as its cheapest exchange price, no buy limit. The merchants themselves still take their own currencies, because the game checks those prices on the phone.
+- **Gear Shop: Ariana:** the Ariana Grande collaboration gear no merchant sold: the four Ariana units' Trust rewards, Encore, the Microphone, Fashionable Dancewear, Microphone Stand, Magical Scrunchie, Kitty Headband and Sparkling Heels, 1000 gil each.
 - **Item Shop:** the same for every other single reward the merchant exchanges sold: 868 items (awakening materials, crystals, eggs, potions, event currencies), 410 recipes, 203 vision cards and 18 summon tickets and keys, in gil at their cheapest exchange price, no buy limit.
 - **Dead currencies:** the United Forces, Kingdom Hearts and premium coin exchanges are open again, using the game's own shop tables. Kingdom Hearts banners take their coins on 11-summons.
 
