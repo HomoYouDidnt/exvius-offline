@@ -50,9 +50,9 @@ public final class SaveTransferActivity extends Activity {
     // Lapis summon price: the banner's own price, half, or 1 lapis for any lapis summon (single or multi).
     static final String[] COST = {"original", "half", "1"};
     private static final String[] COST_LABELS = {"Normal", "Half", "1 lapis"};
-    // Unit Shop price per unit (server/exvius_shop_catalogue.py): 1 lapis or free.
+    // Unit Shop price per unit (server/exvius_shop_catalogue.py): 1 gil or free.
     static final String[] UNIT_SHOP = {"1", "free"};
-    private static final String[] UNIT_SHOP_LABELS = {"1 lapis", "Free"};
+    private static final String[] UNIT_SHOP_LABELS = {"1 gil", "Free"};
     private static final String[] RARE_RARITIES = {"5", "6", "7"};
     private String rare = "1", featured = "1", lapis = "1", cost = "original", unitShop = "1";
     private TextView status;

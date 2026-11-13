@@ -43,6 +43,15 @@ UNIT_SHOP_TAB = 250
 UNIT_SHOP_GROUPS = (('7', 'Neo Vision'), ('5', '5\u2605 base'), ('4', '4\u2605 base'),
                     ('3', '1-3\u2605 base'), ('2', '1-3\u2605 base'), ('1', '1-3\u2605 base'))
 UNIT_SHOP_PRODUCT = 1000000000  # + the unit id, so a unit keeps its product id across updates
+# Every exchange shop priced in lapis is charged in gil instead, at the same number (30 is gil's
+# reward kind; the shop's currency header reads 30 as GIL, NVShopItemListScene_sg::updateCurrencyItem).
+SHOP_CURRENCY = (30, '1')
+
+
+def _units_with_icons():
+    """Unit ids whose unit_icon_<id>.png ships in the game data (content/unit_icons.json)."""
+    path = Path(__file__).with_name('content').joinpath('unit_icons.json')
+    return set(json.loads(path.read_text(encoding='utf-8'))['units'])
 
 
 def _unit_names():
@@ -61,9 +70,11 @@ def unit_shops():
     The units are the series roots a summon pool draws from (player_state.unit_roots_by_rarity):
     rows whose id is their own family root, at their base rarity. Left out: units with no name row
     (the award screen crashes on them), Brave Shift forms (another row's JPW8Vs40 points at them;
-    they come with their NV unit) and the 9xxxxxxxx material units (moogles, pots, cactuars).
+    they come with their NV unit), the 9xxxxxxxx material units (moogles, pots, cactuars) and units
+    with no icon in the game data (the shop list crashes drawing them, e.g. Lara Croft, Ling, Xon).
     Neo Vision units are the roots whose base rarity is 7."""
     names = _unit_names()
+    icons = _units_with_icons()
     rows = _rows('F_UNIT_MST')
     shifted = {str(r.get('JPW8Vs40') or '') for r in rows
                if str(r.get('JPW8Vs40') or '') not in ('', '0', str(r.get('3HriTp6B')))}
@@ -71,7 +82,7 @@ def unit_shops():
     for row in rows:
         uid = str(row.get('3HriTp6B', ''))
         if (uid != str(row.get('woghJa61')) or names.get(uid, '<na>') in ('', '<na>')
-                or uid.startswith('9') or uid in shifted):
+                or uid.startswith('9') or uid in shifted or uid not in icons):
             continue
         title = dict(UNIT_SHOP_GROUPS).get(str(row.get('9fW0TePj')))
         if title is None:
@@ -145,7 +156,7 @@ def catalogue():
     # Original monthly VIP stock and prices, recorded on the preservation wiki.
     # https://exvius.fandom.com/wiki/VIP_Coin#Exchange_Shop
     did = 850001000
-    detail(did, 'VIP Shop', 50, 1, 6, 10)
+    detail(did, 'VIP Shop', SHOP_CURRENCY[0], SHOP_CURRENCY[1], 6, 10)
     vip = [
         ('23:110260:10', 10000, 1), ('23:110260:1', 1000, 1),
         ('23:80:1', 1750, 1), ('23:50:2', 200, 2),
@@ -157,14 +168,14 @@ def catalogue():
         ('27:900020101:1', 700, 10), ('20:1209001274:30', 200, 10),
     ]
     for index, (reward, price, limit) in enumerate(vip):
-        product(940000000 + index, did, reward, price, limit, (50, '1'), True)
+        product(940000000 + index, did, reward, price, limit, SHOP_CURRENCY, True)
     recovered = json.loads(Path(__file__).with_name('content').joinpath('permanent_shops.json').read_text())
     for index, shop in enumerate(recovered['shops']):
         did = 850001001 + index
         kind, currency = shop['currency']
         category = shop.get('category', 6)
         if category == 6:
-            kind, currency = 50, '1'
+            kind, currency = SHOP_CURRENCY
         banner = 60 if shop['name'] == 'EX Coin Shop' else 0
         detail(did, shop['name'], kind, currency, category, banner)
         for position, row in enumerate(shop['products']):
@@ -181,14 +192,14 @@ def catalogue():
             limit = int(row['x0NDnEC9']) if row['kR4n5DxP'] == '1' else 2147483647
             product(900000000 + int(row['S21FT3L8']), did, row['7iJpH5zZ'], row['Qy5EvcK1'],
                     limit, (20, currency))
-    # Unit Shop tabs sit with the other lapis shops (category 6). The listed price is the default;
+    # Unit Shop tabs sit with the other coin shops (category 6). The listed price is the default;
     # entry() and purchase() apply the player's current unit_shop_price.
     for index, (title, units) in enumerate(unit_shops()):
         did = 850003000 + index
-        detail(did, title, 50, '1', 6)
+        detail(did, title, SHOP_CURRENCY[0], SHOP_CURRENCY[1], 6)
         for uid, label in units:
             product(UNIT_SHOP_PRODUCT + int(uid), did, '10:' + uid + ':1', 1, 2147483647,
-                    (50, '1'), label=label)
+                    SHOP_CURRENCY, label=label)
             offers[str(UNIT_SHOP_PRODUCT + int(uid))]['unit_shop'] = True
     return details, products, offers
 
@@ -272,6 +283,8 @@ def purchase(spec, req):
     amount = _price(offer) * quantity
     if kind == 50:
         _require(State.player.spend_lapis(amount), 'not enough Lapis')
+    elif kind == 30:
+        _require(State.player.spend_currency('gil', amount), 'not enough gil')
     else:
         _pay([{'kind': kind, 'id': currency, 'count': amount}])
     _grant(rewards)

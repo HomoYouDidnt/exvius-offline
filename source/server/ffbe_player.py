@@ -159,6 +159,11 @@ def serve_lapis_shop(spec, reply_id, plaintext=None):
             'EzXXHtTY': bid, '4FF0gz8P': bid, 'jsvoa0I2': ','.join(bundle['contents']),
             '6tSP4s8J': '0', '52KBR9qV': '0', 'ZwpMzQWR': '0',
         }
+    # Every bundle that would cost lapis (cash bundles at the converted price, lapis bundles, the
+    # friend-point offer) costs the same number of gil instead; '30' is the gil cost type above.
+    for row in definitions.values():
+        if str(row.get('pRYHbNN5')) == '50':
+            row['pRYHbNN5'] = '30'
     if reply_id == purchase_id:
         request = _request_obj(plaintext)
         rows = request.get('blmGz1EI') or []

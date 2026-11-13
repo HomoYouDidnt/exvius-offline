@@ -21,14 +21,15 @@ A second launcher icon, **Exvius 2.0 Settings**, holds these. They apply without
 - **Rate-up units on top of that:** 1x, 2x or 4x. The in-game **Drop Rates** button shows the real odds.
 - **Lapis gained:** 1x, 2x, 3x, 5x or 10x on every lapis reward. Spending isn't multiplied.
 - **Lapis summon price:** Normal, Half, or 1 lapis for any lapis summon.
-- **Unit Shop price:** 1 lapis or free.
+- **Unit Shop price:** 1 gil or free.
 - **Save export and import:** copy your save to a file and back. The app also keeps 5 automatic backups, made each time it opens.
 
 [SUMMON_RATES.md](SUMMON_RATES.md) explains how a pull works and where the numbers come from.
 
 ### New shops
 
-- **Unit Shop:** every summonable unit, 1,223 of them, for 1 lapis each or free. They're split into tabs by rarity and name (NV, 5★, 4★ and 1-3★).
+- **Unit Shop:** every summonable unit that has an icon in the game data, 1,209 of them, for 1 gil each or free. They're split into tabs by rarity and name (NV, 5★, 4★ and 1-3★).
+- **Gil instead of lapis:** bundles and the coin exchange shops (VIP, EX Coin, Daily Coin and the Unit Shop) cost gil, at the same number they used to cost in lapis.
 - **Super Trust Moogle exchange:** spend Super Trust Moogle Exchange Tickets on a 100% STMR moogle.
 - **Dead currencies:** the United Forces, Kingdom Hearts and premium coin exchanges are open again, using the game's own shop tables. Kingdom Hearts banners take their coins on 11-summons.
 
@@ -102,7 +103,7 @@ The shared raid progress is adjusted for one player. The original bosses, battle
 
 ### Former cash bundles cost Lapis
 
-Bundles that used to cost real money are bought with Lapis. There is also a **2,000 Friend Points** bundle for **100 Lapis**.
+Bundles that used to cost real money are bought with Lapis. There is also a **2,000 Friend Points** bundle for **100 Lapis**. (In Exvius 2.0 these cost gil instead; see above.)
 
 Daily login rewards use your local save and date.
 

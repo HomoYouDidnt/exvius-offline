@@ -71,12 +71,13 @@ summons.
 ## Unit Shop
 
 The exchange shop has Unit Shop tabs next to the VIP and coin shops. They sell every unit a summon can
-give, one copy at a time, with no limit, for 1 lapis each (or free, from Exvius Settings).
+give, one copy at a time, with no limit, for 1 gil each (or free, from Exvius Settings).
 
 - Units come at their base rarity, the same form a summon gives: a 5★ base unit arrives at 5★ and
   awakens the usual way. Extra copies work as awakening and enhancement copies.
 - Neo Vision units have their own tabs. Brave Shift forms aren't sold separately; they come with their NV unit.
 - The list is built from the game's unit table (`F_UNIT_MST`) the first time the shop opens:
   `exvius_shop_catalogue.unit_shops`. It leaves out units with no name (the result screen crashes on
-  them) and the 9xxxxxxxx material units (moogles, pots, cactuars).
+  them), the 9xxxxxxxx material units (moogles, pots, cactuars) and units with no icon in the game
+  data (`content/unit_icons.json`; the shop list crashes drawing a unit without one).
 - Long lists are split into tabs of up to 250 units, sorted by name.

@@ -1234,10 +1234,15 @@ class LocalGameIntegration(unittest.TestCase):
                      and int(r['jPV7Xc4N']) >= 1000000000]
         self.assertGreater(len(unit_rows), 1000)
         self.assertEqual({r['e4mG8jTc'] for r in unit_rows}, {'1'})
+        # The shop list draws each unit's icon and crashes on a unit without one (Lara Croft, 332000105).
+        from exvius_shop_catalogue import _units_with_icons
+        sold = {r['P4puB2ch'].split(':')[1] for r in unit_rows}
+        self.assertLessEqual(sold, _units_with_icons())
+        self.assertNotIn('332000105', sold)
         coin_shops = [r for r in reply['F2rNo6qf'] if r['JV8AIH3n'] == '6']
         self.assertEqual(len(coin_shops), 3 + len(unit_tabs))
-        self.assertTrue(all(r['0GgK6ytT'] == '50:1' for r in coin_shops))
-        self.assertTrue(all(r['0GgK6ytT'] != '50:1' for r in reply['F2rNo6qf']
+        self.assertTrue(all(r['0GgK6ytT'] == '30:1' for r in coin_shops))
+        self.assertTrue(all(r['0GgK6ytT'] != '30:1' for r in reply['F2rNo6qf']
                             if r['JV8AIH3n'] in ('4', '5')))
 
     def test_every_native_shop_offer_has_a_name_and_can_grant_its_reward(self):
@@ -1272,23 +1277,25 @@ class LocalGameIntegration(unittest.TestCase):
                     _grant([row])
                     self.assertEqual(player.item_count(kind, iid), before + count, pid)
 
-    def test_vip_shop_spends_lapis_and_persists_stock(self):
+    def test_vip_shop_spends_gil_and_persists_stock(self):
         player = self.game.server.State.player
-        player.add_currency('lapis_free', 5000)
+        player.currencies['gil'] = 5000
+        lapis = player.currencies['lapis_free']
         player.grant_item(23, 110003, 1000)
         before = player.item_count(20, 293000100)
         self.exchange('GachaSelectExchangeExeRequest',
                       {'4mrD6JuA': [{'jPV7Xc4N': '940000009', 'Qy5EvcK1': '1'}]})
-        self.assertEqual(player.currencies['lapis_free'], 4000)
+        self.assertEqual(player.currencies['gil'], 4000)
+        self.assertEqual(player.currencies['lapis_free'], lapis)
         self.assertEqual(player.item_count(23, 110003), 1000)
         self.assertEqual(player.item_count(20, 293000100), before + 1)
         restored = self.restored_player()
         self.assertEqual(restored.item_count(20, 293000100), before + 1)
-        self.assertEqual(restored.currencies['lapis_free'], 4000)
+        self.assertEqual(restored.currencies['gil'], 4000)
         self.game.server.State.player = player = restored
         self.exchange('GachaSelectExchangeExeRequest',
                       {'4mrD6JuA': [{'jPV7Xc4N': '940000009', 'Qy5EvcK1': '1'}]})
-        self.assertEqual(player.currencies['lapis_free'], 3000)
+        self.assertEqual(player.currencies['gil'], 3000)
         self.assertEqual(player.item_count(20, 293000100), before + 2)
         saved = copy.deepcopy(player.data)
         self.exchange('GachaSelectExchangeExeRequest',
@@ -2125,7 +2132,7 @@ class LocalGameIntegration(unittest.TestCase):
         # The Bundles screen sends no request; it lists the BundleMst rows an earlier reply carried.
         reply = self.exchange('GetUserInfoRequest', {})
         offer = next(row for row in reply['fMohhKK8'] if row['EzXXHtTY'] == '990000001')
-        self.assertEqual((offer['pRYHbNN5'], offer['AOHRcCC2']), ('50', '100'))
+        self.assertEqual((offer['pRYHbNN5'], offer['AOHRcCC2']), ('30', '100'))
         self.assertGreaterEqual(int(offer['gzWIBU0I']), 1)  # BundleInfo::canPurchase needs a limit >= 1
         self.assertRegex(offer['m8ivD4NX'], r'^\d{4}-\d\d-\d\d ')  # end date is parsed as date text
         self.assertIn('LhVz6aD2', reply)
@@ -2134,34 +2141,36 @@ class LocalGameIntegration(unittest.TestCase):
         player = self.game.server.State.player
         player.currencies['lapis_free'], player.currencies['gil'] = 500, 50000
         offers = {row['EzXXHtTY']: row for row in self.exchange('GetUserInfoRequest', {})['fMohhKK8']}
-        self.assertEqual((offers['990000101']['pRYHbNN5'], offers['990000101']['AOHRcCC2']), ('50', '242'))
+        # Cash and lapis prices are charged as the same number of gil.
+        self.assertEqual((offers['990000101']['pRYHbNN5'], offers['990000101']['AOHRcCC2']), ('30', '242'))
         self.assertEqual(offers['990000103']['pRYHbNN5'], '30')  # gil price kept
+        self.assertNotIn('50', {row['pRYHbNN5'] for row in offers.values()})
         reply = self.exchange('BundlePurchaseRequest', {'blmGz1EI': [{'EzXXHtTY': '990000105'}]})
-        self.assertEqual(player.currencies['lapis_free'], 400)
-        self.assertEqual(player.currencies['gil'], 1050000)
+        self.assertEqual(player.currencies['lapis_free'], 500)
+        self.assertEqual(player.currencies['gil'], 1049900)
         self.assertNotIn('990000105', {row['EzXXHtTY'] for row in reply['fMohhKK8']})  # once per day
         self.exchange('BundlePurchaseRequest', {'blmGz1EI': [{'EzXXHtTY': '990000103'}]})
-        self.assertEqual(player.currencies['gil'], 1030000)
+        self.assertEqual(player.currencies['gil'], 1029900)
         self.assertEqual(self.restored_player().data['bundle_purchases']['990000103']['count'], 1)
 
     def test_friend_point_shop_uses_existing_bundle_purchase_and_save(self):
         player = self.game.server.State.player
-        player.currencies['lapis_free'] = 500
+        player.currencies['lapis_free'], player.currencies['gil'] = 500, 1000
         before_fp = player.currencies['friend_point']
         catalogue = self.exchange('BundleStatusRequest', {})
         offer = next(row for row in catalogue['fMohhKK8'] if row['EzXXHtTY'] == '990000001')
-        self.assertEqual(offer['pRYHbNN5'], '50')
+        self.assertEqual(offer['pRYHbNN5'], '30')
         self.assertEqual(offer['AOHRcCC2'], '100')
         self.exchange('BundlePurchaseRequest', {'blmGz1EI': [{'EzXXHtTY': '990000001'}]})
-        self.assertEqual(player.currencies['lapis_free'], 400)
+        self.assertEqual((player.currencies['lapis_free'], player.currencies['gil']), (500, 900))
         self.assertEqual(player.currencies['friend_point'], before_fp + 2000)
         restored = self.restored_player()
-        self.assertEqual(restored.currencies['lapis_free'], 400)
+        self.assertEqual((restored.currencies['lapis_free'], restored.currencies['gil']), (500, 900))
         self.assertEqual(restored.currencies['friend_point'], before_fp + 2000)
         self.game.server.State.player = restored
         before_roster = len(restored.data['roster'])
         self.summon('1', '10011')
-        self.assertEqual(restored.currencies['lapis_free'], 400)
+        self.assertEqual(restored.currencies['lapis_free'], 500)
         self.assertEqual(restored.currencies['friend_point'], before_fp + 1800)
         self.assertEqual(len(self.restored_player().data['roster']), before_roster + 1)
 
@@ -2176,25 +2185,24 @@ class LocalGameIntegration(unittest.TestCase):
         state.replies['fixture-shop'] = original
         self.addCleanup(state.replies.pop, 'fixture-shop', None)
         player = state.player
-        player.currencies['lapis_free'] = 500
+        player.currencies['lapis_free'], player.currencies['gil'] = 500, 500
         before_fp = player.currencies['friend_point']
         catalogue = self.exchange('BundleStatusRequest', {})
         offer = next(row for row in catalogue['fMohhKK8'] if row['EzXXHtTY'] == 'fixture-cash')
-        self.assertEqual((offer['pRYHbNN5'], offer['AOHRcCC2'], offer['TzvJwA60']), ('50', '120', ''))
+        self.assertEqual((offer['pRYHbNN5'], offer['AOHRcCC2'], offer['TzvJwA60']), ('30', '120', ''))
         self.assertEqual(catalogue['pcjqhOI8'][0], original['pcjqhOI8'][0])
         self.assertEqual(original['fMohhKK8'][0]['pRYHbNN5'], '9999')
         self.exchange('BundlePurchaseRequest', {'blmGz1EI': [{'EzXXHtTY': 'fixture-cash'}]})
-        self.assertEqual(player.currencies['lapis_free'], 380)
+        self.assertEqual((player.currencies['lapis_free'], player.currencies['gil']), (500, 380))
         self.assertEqual(player.currencies['friend_point'], before_fp + 3000)
 
-    def test_friend_point_purchase_cannot_overdraw_lapis(self):
+    def test_friend_point_purchase_cannot_overdraw_gil(self):
         player = self.game.server.State.player
-        player.currencies['lapis_free'] = 99
-        player.currencies['lapis_paid'] = 0
+        player.currencies['gil'] = 99
         before_fp = player.currencies['friend_point']
-        with self.assertRaisesRegex(ValueError, 'Not enough Lapis'):
+        with self.assertRaisesRegex(ValueError, 'Not enough gil'):
             self.exchange('BundlePurchaseRequest', {'blmGz1EI': [{'EzXXHtTY': '990000001'}]})
-        self.assertEqual(player.currencies['lapis_free'], 99)
+        self.assertEqual(player.currencies['gil'], 99)
         self.assertEqual(player.currencies['friend_point'], before_fp)
 
     def test_daily_signin_keeps_original_reward_and_cannot_repeat_after_deletion(self):

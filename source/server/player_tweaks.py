@@ -40,7 +40,7 @@ amount charged go through `summon_cost`, so they always agree. Ticket, friend po
 unchanged.
 
 `unit_shop_price` is what one unit costs in the Unit Shop tabs (`exvius_shop_catalogue.unit_shops`):
-"1" (1 lapis, the default) or "free".
+"1" (1 gil, the default) or "free".
 """
 from __future__ import annotations
 
