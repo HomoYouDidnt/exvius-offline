@@ -370,7 +370,7 @@ def apply_party_edit(plaintext: str | None) -> None:
         if special:
             party['active_deck'] = int(active_id)
             if special == '11':
-                State.player.set_active_deck(active_id)
+                State.player.set_active_deck(active_id, swap_gear=False)
         else:
             State.player.set_active_deck(active_id)
         if active_id not in changed:

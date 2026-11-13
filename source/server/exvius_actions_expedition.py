@@ -913,10 +913,13 @@ def party_load(spec, req):
     # Some old saves represent ownership only through equipped references. Retain
     # those copies in the established inventory before clearing any assignments.
     owned = _retain_owned_equipment()
+    if not kind:
+        # Park the outgoing party's gear before the loaded party's goes on (#86).
+        State.player.remember_deck_gear(party['active_deck'])
     deck["members"] = [{"member_type": int(t), "disp_order": int(p), "instance_id": iid} for t, p, iid in pairs]
     party['active_deck'] = int(did)
     if kind == '11':
-        State.player.set_active_deck(did)
+        State.player.set_active_deck(did, swap_gear=False)
     espers = deepcopy(slot.get('espers', wire_espers))
     beast_owner = party if kind else State.player.data
     beast_owner.setdefault('beast_decks', {})[did] = [e if not e or State.player.owns_beast(e) else 0 for e in espers]
@@ -926,14 +929,13 @@ def party_load(spec, req):
             roster[iid].update(deepcopy(saved))
         else:
             roster[iid].update(deepcopy(decoded.get(iid, {})))
-    # Restore only copies that still exist. Prioritize the loaded members and
-    # remove conflicting assignments from other units rather than minting gear.
+    # Restore only copies that still exist, checked within the loaded party only:
+    # units in other parties may share the same copies (#86), so they keep their gear.
     gear_left = Counter({r['J1YX9kmM']: int(r['Qy5EvcK1']) for r in owned})
     materia_left = Counter({r['H5jBL0Vf']: int(r['Qy5EvcK1']) for r in State.player.materia_rows()})
     cards_left = {str(c['user_vc_id']) for c in State.player.data.get('vision_cards', [])}
     selected = [p[2] for p in pairs]
-    order = selected + [iid for iid in roster if iid not in selected]
-    for iid in order:
+    for iid in selected:
         unit = roster[iid]
         used_gear, used_materia, used_cards = Counter(), Counter(), set()
         for field in ('equipment', 'shift_equipment'):
@@ -974,6 +976,8 @@ def party_load(spec, req):
             if unit[field]:
                 cards_left.discard(instance)
                 used_cards.add(instance)
+    if not kind:
+        State.player.remember_deck_gear(did)
     block = deepcopy(_store("party_register"))
     block["last_load"] = {"slot": _slot_key(node), "deck": did, "party_type": kind or '1'}
     _put("party_register", block)

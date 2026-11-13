@@ -2106,6 +2106,10 @@ def _serve_nv_ex() -> bool:
         return False
 
 
+LOADOUT_FIELDS = ('equipment', 'shift_equipment', 'materia', 'shift_materia',
+                  'vision_card', 'shift_vision_card')
+
+
 class PlayerState:
     def __init__(self, data: dict, mode: str = "live"):
         if mode not in MODES:
@@ -3973,9 +3977,81 @@ class PlayerState:
         self.paid_challenges.setdefault(mid, set()).add(cid)
         return True
 
-    def set_active_deck(self, deck_id) -> None:
+    def set_active_deck(self, deck_id, swap_gear: bool = True) -> None:
         if self._mutate():
-            self.data["party"]["active_deck"] = int(deck_id)
+            old = self.data["party"]["active_deck"]
+            if swap_gear and str(old) != str(deck_id):
+                # Each party keeps its own gear (#86, #84): park the outgoing party's loadouts and
+                # put the incoming party's back on its units.
+                self.remember_deck_gear(old)
+                self.data["party"]["active_deck"] = int(deck_id)
+                self.restore_deck_gear(deck_id)
+            else:
+                self.data["party"]["active_deck"] = int(deck_id)
+
+    # --- per-party loadouts (normal party decks) ------------------------------------------------------
+    # The roster's own equipment fields always hold the ACTIVE party's gear, so battles and stats keep
+    # reading them unchanged. `party['deck_loadouts'][deck][unit]` remembers every party's gear, which
+    # lets one copy of an item sit on units in different parties, as Global allowed from Sept 2021.
+    def _deck_member_ids(self, deck_id) -> list:
+        deck = next((d for d in self.data['party']['decks'] if str(d['id']) == str(deck_id)), None)
+        return [str(m['instance_id']) for m in (deck or {}).get('members') or []]
+
+    def remember_deck_gear(self, deck_id, ids=None) -> None:
+        roster = {str(u['instance_id']): u for u in self.data['roster']}
+        store = self.data['party'].setdefault('deck_loadouts', {}).setdefault(str(deck_id), {})
+        for iid in (self._deck_member_ids(deck_id) if ids is None else ids):
+            unit = roster.get(str(iid))
+            if unit is not None:
+                store[str(iid)] = {k: copy.deepcopy(unit[k]) for k in LOADOUT_FIELDS if k in unit}
+        for iid in [i for i in store if i not in roster]:
+            del store[iid]
+        self.dirty = True
+
+    def restore_deck_gear(self, deck_id) -> None:
+        store = (self.data['party'].get('deck_loadouts') or {}).get(str(deck_id)) or {}
+        if not store:
+            return
+        # Keep every copy that is worn now in the inventory before any slot changes, then restore
+        # only items that still exist, so a sold or fused item never comes back.
+        self.retain_worn_equipment()
+        owned = self._owned_ids()
+        roster = {str(u['instance_id']): u for u in self.data['roster']}
+        for iid in self._deck_member_ids(deck_id):
+            saved, unit = store.get(iid), roster.get(iid)
+            if saved and unit is not None:
+                unit.update(self._owned_loadout(saved, owned))
+        self.dirty = True
+
+    def _owned_ids(self):
+        return ({row['J1YX9kmM'] for row in self.equip_item_rows()},
+                {row['H5jBL0Vf'] for row in self.materia_rows()},
+                {str(c['user_vc_id']) for c in self.data.get('vision_cards', [])})
+
+    @staticmethod
+    def _owned_loadout(saved, owned) -> dict:
+        gear, materia, cards = owned
+        out = {}
+        for field, value in saved.items():
+            if field in ('equipment', 'shift_equipment'):
+                value = {k: (str(v) if str(v) in gear else '0') for k, v in (value or {}).items()}
+            elif field in ('materia', 'shift_materia'):
+                value = [str(v) if str(v) in materia else '0' for v in value or []]
+            elif field in ('vision_card', 'shift_vision_card'):
+                instance = str(value or '').split('-')[-1]
+                value = value if not value or instance in ('', '0') or instance in cards else ''
+            out[field] = copy.deepcopy(value)
+        return out
+
+    def retain_worn_equipment(self) -> None:
+        equipment = self.data.setdefault('inventory', {}).setdefault('equipment', [])
+        by_id = {str(e['item_id']): e for e in equipment}
+        for row in self.equip_item_rows():
+            iid, count = row['J1YX9kmM'], int(row['Qy5EvcK1'])
+            if iid in by_id:
+                by_id[iid]['count'] = max(int(by_id[iid].get('count', 0)), count)
+            else:
+                equipment.append({'item_id': int(iid), 'count': count})
 
     def add_unit_exp(self, instance_id, amount: int) -> dict | None:
         """Credit unit EXP and advance the level by walking `needExp` FORWARD.
@@ -4966,34 +5042,52 @@ class PlayerState:
                 tags[2]: self._beast_deck_rows(party)}
 
     def _equip_rows(self, party=None) -> list:
+        normal = party is None or party is self.data['party']
         party = self.data['party'] if party is None else party
         rows = []
+        if normal:
+            # Other parties' remembered gear first, so a reader that keys rows by unit alone still
+            # ends on the active party's row (sent last, below).
+            roster = {str(u['instance_id']): u for u in self.data['roster']}
+            owned = None
+            for did, store in (party.get('deck_loadouts') or {}).items():
+                if str(did) == str(party['active_deck']):
+                    continue
+                members = set(self._deck_member_ids(did))
+                for iid, saved in store.items():
+                    if iid in members and iid in roster:
+                        owned = owned or self._owned_ids()
+                        rows.append(self._equip_row(roster[iid], self._owned_loadout(saved, owned), did))
         saved_loadouts = party.get("loadouts") or {}
         for u in self.data["roster"]:
             saved = saved_loadouts.get(str(u.get("instance_id"))) or {}
-            equip = saved.get("equipment", u.get("equipment")) or {}
-            has_shift = bool(u.get('shift_equipment') or u.get('shift_materia') or u.get('shift_vision_card'))
-            slots = "@".join(f"{slot}-{equip.get(str(slot), equip.get(slot, '0'))}"
-                             for slot in range(1, 7))
-            if has_shift:
-                shift = saved.get("shift_equipment", u.get('shift_equipment')) or {}
-                slots += '|' + '@'.join(f"{n}-{shift.get(str(n), shift.get(n, '0'))}" for n in range(1, 7))
-            materia = saved.get("materia", u.get("materia")) or []
-            mat = "@".join(f"{i + 1}-{m}" for i, m in enumerate(materia))
-            if has_shift:
-                shift_materia = saved.get("shift_materia", u.get('shift_materia')) or ['0'] * 4
-                mat += '|' + '@'.join(f'{n + 1}-{m}' for n, m in enumerate(shift_materia))
-            card = saved.get("vision_card", u.get('vision_card')) or \
-                saved.get("shift_vision_card", u.get('shift_vision_card')) or '0-0'
-            if not str(card).startswith('0-'):
-                card = '0-' + str(card)
-            rows.append({"og2GHy49": str(u["instance_id"]),
-                         "r21y0YzS": str(party["active_deck"]),
-                         "93Y6evuT": slots, "80NUYFMJ": mat,
-                         "nQ1iAGf3": card})
-            if 'skin_id' in u:
-                rows[-1]['2c8nqLrM'] = str(u['skin_id'])
+            rows.append(self._equip_row(u, saved, party["active_deck"]))
         return rows
+
+    def _equip_row(self, u, saved, deck_id) -> dict:
+        equip = saved.get("equipment", u.get("equipment")) or {}
+        has_shift = bool(u.get('shift_equipment') or u.get('shift_materia') or u.get('shift_vision_card'))
+        slots = "@".join(f"{slot}-{equip.get(str(slot), equip.get(slot, '0'))}"
+                         for slot in range(1, 7))
+        if has_shift:
+            shift = saved.get("shift_equipment", u.get('shift_equipment')) or {}
+            slots += '|' + '@'.join(f"{n}-{shift.get(str(n), shift.get(n, '0'))}" for n in range(1, 7))
+        materia = saved.get("materia", u.get("materia")) or []
+        mat = "@".join(f"{i + 1}-{m}" for i, m in enumerate(materia))
+        if has_shift:
+            shift_materia = saved.get("shift_materia", u.get('shift_materia')) or ['0'] * 4
+            mat += '|' + '@'.join(f'{n + 1}-{m}' for n, m in enumerate(shift_materia))
+        card = saved.get("vision_card", u.get('vision_card')) or \
+            saved.get("shift_vision_card", u.get('shift_vision_card')) or '0-0'
+        if not str(card).startswith('0-'):
+            card = '0-' + str(card)
+        row = {"og2GHy49": str(u["instance_id"]),
+               "r21y0YzS": str(deck_id),
+               "93Y6evuT": slots, "80NUYFMJ": mat,
+               "nQ1iAGf3": card}
+        if 'skin_id' in u:
+            row['2c8nqLrM'] = str(u['skin_id'])
+        return row
 
     def _deck_rows(self, party=None) -> list:
         party = self.data['party'] if party is None else party

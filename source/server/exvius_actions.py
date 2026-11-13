@@ -131,7 +131,9 @@ def _parse_rewards(text):
 
 
 def unit_equip(spec, req):
+    from copy import deepcopy
     from exvius_actions_expedition import _retain_owned_equipment, _wire_loadouts
+    from player_state import LOADOUT_FIELDS
 
     player = State.player
     rows = req.get("Er92Kdhm")
@@ -143,6 +145,9 @@ def unit_equip(spec, req):
     cards = {str(card["user_vc_id"]) for card in player.data.get("vision_cards", [])}
     loadouts = {}
     party_loadouts = {}
+    deck_loadouts = {}
+    active = str(player.data["party"]["active_deck"])
+    decks = {str(deck["id"]) for deck in player.data["party"]["decks"]}
     try:
         for row in rows:
             wire_kind = str(row.get("xBi3L6yR", "1"))
@@ -162,7 +167,11 @@ def unit_equip(spec, req):
                         ids = {part for part in values.split("-") if part not in ("", "0")}
                         if ids and not ids.intersection(cards):
                             raise ValueError("unowned vision card")
-                if party_kind == "":
+                did = str(row.get("r21y0YzS", active))
+                if party_kind == "" and did in decks and did != active:
+                    # An edit to another party's gear only changes that party (#86).
+                    deck_loadouts.setdefault(did, {}).setdefault(iid, {}).update(fields)
+                elif party_kind == "":
                     loadouts.setdefault(iid, {}).update(fields)
                 else:
                     party_loadouts.setdefault(party_kind, {}).setdefault(iid, {}).update(fields)
@@ -180,6 +189,14 @@ def unit_equip(spec, req):
                 if field in fields and fields[field] != roster[iid].get(field) and any(i != '0' for i in fields[field]):
                     score_quest_action('13')
             roster[iid].update(fields)
+        player.dirty = True
+    if loadouts:
+        player.remember_deck_gear(active, [i for i in loadouts if i in player._deck_member_ids(active)])
+    for did, changes in deck_loadouts.items():
+        stored = player.data["party"].setdefault("deck_loadouts", {}).setdefault(did, {})
+        for iid, fields in changes.items():
+            base = stored.get(iid) or {k: deepcopy(roster[iid][k]) for k in LOADOUT_FIELDS if k in roster[iid]}
+            stored[iid] = {**base, **deepcopy(fields)}
         player.dirty = True
     for party_kind, changes in party_loadouts.items():
         party = player.special_party(party_kind)
