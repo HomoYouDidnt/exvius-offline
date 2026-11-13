@@ -24,9 +24,10 @@ typedef struct { void * object; } Call;
 
 #define CAP 4096
 #define MASK (CAP - 1)
-static void * keys[CAP];
-static Box boxes[CAP];
-static unsigned int used;
+/* The table lives in memory the script allocates: some devices map the
+   compiled module read-only, so a static table there faults on first write. */
+typedef struct { void * keys[CAP]; Box boxes[CAP]; unsigned int used; } Table;
+extern Table table;
 
 static unsigned int slot_of (void * key)
 {
@@ -40,9 +41,9 @@ static unsigned int slot_of (void * key)
 static int find (void * object)
 {
   unsigned int i = slot_of (object);
-  while (keys[i] != 0)
+  while (table.keys[i] != 0)
   {
-    if (keys[i] == object)
+    if (table.keys[i] == object)
       return (int) i;
     i = (i + 1) & MASK;
   }
@@ -60,17 +61,17 @@ void art_remove (void * object)
   for (;;)
   {
     j = (j + 1) & MASK;
-    if (keys[j] == 0)
+    if (table.keys[j] == 0)
       break;
-    k = slot_of (keys[j]);
+    k = slot_of (table.keys[j]);
     if (i <= j ? (i < k && k <= j) : (i < k || k <= j))
       continue;
-    keys[i] = keys[j];
-    boxes[i] = boxes[j];
+    table.keys[i] = table.keys[j];
+    table.boxes[i] = table.boxes[j];
     i = j;
   }
-  keys[i] = 0;
-  used--;
+  table.keys[i] = 0;
+  table.used--;
 }
 
 void art_set (void * object, float dx, float dy)
@@ -79,19 +80,19 @@ void art_set (void * object, float dx, float dy)
   unsigned int i;
   if (found < 0)
   {
-    if (used >= CAP / 4 * 3)
+    if (table.used >= CAP / 4 * 3)
       return;
     i = slot_of (object);
-    while (keys[i] != 0)
+    while (table.keys[i] != 0)
       i = (i + 1) & MASK;
-    keys[i] = object;
-    used++;
+    table.keys[i] = object;
+    table.used++;
   }
   else
     i = (unsigned int) found;
-  boxes[i].dx = dx;
-  boxes[i].dy = dy;
-  boxes[i].adjusted = 0;
+  table.boxes[i].dx = dx;
+  table.boxes[i].dy = dy;
+  table.boxes[i].adjusted = 0;
 }
 
 void art_center (void * object)
@@ -103,7 +104,7 @@ void art_center (void * object)
   float x, y, ex, ey;
   if (found < 0)
     return;
-  box = &boxes[found];
+  box = &table.boxes[found];
   node = getBanner (object);
   if (node == 0)
     return;
@@ -141,7 +142,11 @@ function nativeArtCenter(module, note) {
   if (typeof CModule === 'undefined') return null;
   try {
     const exported = name => module.getExportByName(name);
+    // Pages from Memory.alloc are zero-filled, which the table needs.
+    const size = 4096 * (Process.pointerSize + 20) + 16;
+    const table = Memory.alloc(Math.ceil(size / Process.pageSize) * Process.pageSize);
     const code = new CModule(ART_CENTER_SOURCE, {
+      table,
       getBanner: exported('_ZNK18GachaDetailScrlObj9getBannerEv'),
       anchor: exported('_ZNK7cocos2d4Node14getAnchorPointEv'),
       getX: exported('_ZNK7cocos2d4Node12getPositionXEv'),
@@ -152,6 +157,7 @@ function nativeArtCenter(module, note) {
     note('SUMMON_ART_CENTER native');
     return {
       code,
+      table,
       set: new NativeFunction(code.art_set, 'void', ['pointer', 'float', 'float']),
       remove: new NativeFunction(code.art_remove, 'void', ['pointer']),
       center: new NativeFunction(code.art_center, 'void', ['pointer'])

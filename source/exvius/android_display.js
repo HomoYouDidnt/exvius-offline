@@ -148,9 +148,10 @@ extern int check (void * player);
 
 #define CAP 4096
 #define MASK (CAP - 1)
-static void * keys[CAP];
-static signed char counts[CAP];
-static unsigned int used;
+/* The table lives in memory the script allocates: some devices map the
+   compiled module read-only, so a static table there faults on first write. */
+typedef struct { void * keys[CAP]; signed char counts[CAP]; unsigned int used; } Gate;
+extern Gate gate;
 
 static unsigned int slot_of (void * key)
 {
@@ -165,39 +166,39 @@ void onFrame (GumInvocationContext * ic)
 {
   void * player = gum_invocation_context_get_nth_argument (ic, 0);
   unsigned int i = slot_of (player);
-  while (keys[i] != player)
+  while (gate.keys[i] != player)
   {
-    if (keys[i] == 0)
+    if (gate.keys[i] == 0)
     {
-      if (used >= CAP / 4 * 3)
+      if (gate.used >= CAP / 4 * 3)
       {
         /* Players freed without a destructor call: start over. */
         unsigned int j;
-        for (j = 0; j < CAP; j++) keys[j] = 0;
-        used = 0;
+        for (j = 0; j < CAP; j++) gate.keys[j] = 0;
+        gate.used = 0;
         i = slot_of (player);
       }
-      keys[i] = player;
-      counts[i] = 0;
-      used++;
+      gate.keys[i] = player;
+      gate.counts[i] = 0;
+      gate.used++;
       break;
     }
     i = (i + 1) & MASK;
   }
-  if (counts[i] < 0 || counts[i] > 8)
+  if (gate.counts[i] < 0 || gate.counts[i] > 8)
     return;
-  counts[i]++;
+  gate.counts[i]++;
   if (check (player))
-    counts[i] = -1;
+    gate.counts[i] = -1;
 }
 
 void onDestroy (GumInvocationContext * ic)
 {
   void * player = gum_invocation_context_get_nth_argument (ic, 0);
   unsigned int i = slot_of (player), j, k;
-  while (keys[i] != player)
+  while (gate.keys[i] != player)
   {
-    if (keys[i] == 0)
+    if (gate.keys[i] == 0)
       return;
     i = (i + 1) & MASK;
   }
@@ -205,17 +206,17 @@ void onDestroy (GumInvocationContext * ic)
   for (;;)
   {
     j = (j + 1) & MASK;
-    if (keys[j] == 0)
+    if (gate.keys[j] == 0)
       break;
-    k = slot_of (keys[j]);
+    k = slot_of (gate.keys[j]);
     if (i <= j ? (i < k && k <= j) : (i < k || k <= j))
       continue;
-    keys[i] = keys[j];
-    counts[i] = counts[j];
+    gate.keys[i] = gate.keys[j];
+    gate.counts[i] = gate.counts[j];
     i = j;
   }
-  keys[i] = 0;
-  used--;
+  gate.keys[i] = 0;
+  gate.used--;
 }
 `;
 
@@ -223,9 +224,12 @@ function nativeFrameGate(check, note) {
   if (typeof CModule === 'undefined') return null;
   try {
     const callback = new NativeCallback(player => check(player) ? 1 : 0, 'int', ['pointer']);
-    const module = new CModule(FRAME_GATE_SOURCE, {check: callback});
+    // Pages from Memory.alloc are zero-filled, which the table needs.
+    const size = 4096 * (Process.pointerSize + 1) + 16;
+    const gate = Memory.alloc(Math.ceil(size / Process.pageSize) * Process.pageSize);
+    const module = new CModule(FRAME_GATE_SOURCE, {check: callback, gate});
     note('FRAME_GATE native');
-    return {module, callback};
+    return {module, callback, gate};
   } catch (error) {
     note('FRAME_GATE_FALLBACK ' + error);
     return null;
