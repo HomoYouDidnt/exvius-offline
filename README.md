@@ -1,16 +1,69 @@
-# Exvius Offline
+# Exvius 2.0
 
-**Play Final Fantasy Brave Exvius offline on Android.**
+**A quality-of-life fork of [Elvlin's Exvius Offline](https://github.com/Elvlin/exvius-offline), which plays Final Fantasy Brave Exvius offline on Android.**
 
-**[Download the APK (41.4 MB)](https://github.com/Elvlin/exvius-offline/releases/download/v0.1.31/exvius-offline-v0.1.31.apk)**
+Everything below is built on Elvlin's work. This fork adds faster play, better summon odds, more ways to spend lapis and currencies, and fixes for a few things that were broken or hidden. It builds as a separate app called **Exvius 2.0**, so it installs next to the original Exvius Offline instead of replacing it.
 
-This is a fan project built from the original Global game. Download the game data once, then play it offline.
+The changes live on the [`qol` branch](https://github.com/HomoYouDidnt/exvius-offline/tree/qol). **None of them have been tested on a phone yet.** There is no download here: you build the app yourself (see [Build and install](#build-and-install)).
 
-Replay stages to farm Lapis, pick the summon banner you want, and revisit events you want
+This is an unofficial fan project and is not affiliated with Square Enix, gumi or the original author.
 
-This project is still being worked on. It is unofficial and is not affiliated with Square Enix or gumi.
+## What this fork adds
 
-[What changed in v0.1.31](release/notes-v0.1.31.md)
+### Settings you can change
+
+A second launcher icon, **Exvius 2.0 Settings**, holds these. They apply without a rebuild.
+
+- **Game speed:** 1x, 1.5x, 2x or 3x for the whole game, not only battles.
+- **5★ and Neo Vision chance:** 1x, 2x, 5x or 10x.
+- **Rate-up units on top of that:** 1x, 2x or 4x. The in-game **Drop Rates** button shows the real odds.
+- **Lapis gained:** 1x, 2x, 3x, 5x or 10x on every lapis reward. Spending isn't multiplied.
+- **Lapis summon price:** Normal, Half, or 1 lapis for any lapis summon.
+- **Unit Shop price:** 1 lapis or free.
+- **Save export and import:** copy your save to a file and back. The app also keeps 5 automatic backups, made each time it opens.
+
+[SUMMON_RATES.md](SUMMON_RATES.md) explains how a pull works and where the numbers come from.
+
+### New shops
+
+- **Unit Shop:** every summonable unit, 1,223 of them, for 1 lapis each or free. They're split into tabs by rarity and name (NV, 5★, 4★ and 1-3★).
+- **Super Trust Moogle exchange:** spend Super Trust Moogle Exchange Tickets on a 100% STMR moogle.
+- **Dead currencies:** the United Forces, Kingdom Hearts and premium coin exchanges are open again, using the game's own shop tables. Kingdom Hearts banners take their coins on 11-summons.
+
+### Gameplay
+
+- **Random battles in explorations** are back, in 263 of the 473 explorations. The rest have no enemy data to draw on.
+- **Each party keeps its own equipment.** Switching parties swaps gear, so you don't have to re-equip units shared between parties.
+- **The present inbox is reachable again.** Its envelope button was hidden under the Home carousel and couldn't be tapped; it now sits above it.
+
+### Speed and fixes
+
+- **Less lag on the summon screen.** It used to re-read about 15 MB of banner files on every visit and tap. Those files are now read once, and saves are about 18 times faster.
+- **Less work every frame.** The animation and banner-scroll hooks that ran every frame now run in native code, with the old version kept as a fallback.
+- **Smaller summon seasons.** Seasons 2, 3 and 4 are each split in two by release year (for example "S2 2017-18" and "S2 2019-20"), so their lists are shorter.
+- **Tall screens:** the town fast-travel list no longer runs under its bottom bar.
+- **Update check:** the update file is fetched directly with retries, and failures show a clear message.
+
+## Build and install
+
+You need the original **FFBE Global v9.0.0 APK**, your own signing key and a Windows PC with the Android build tools. [PERSONAL_BUILD.md](PERSONAL_BUILD.md) has every step, including how to copy your save over from the original app with a USB cable.
+
+In short:
+
+1. Build `exvius-2.0.apk` with `source/exvius/build_personal.ps1`.
+2. Install it on an **Android 7.0 or newer phone with 64-bit ARM support**. The original Exvius Offline can stay installed.
+3. Open it online once. It downloads the game data, about **17.8 GB**, so allow about **21 GB** of free space.
+4. Import your save in **Exvius 2.0 Settings** if you copied one over.
+
+Exvius 2.0 uses the same save format as the original, so nothing gets converted.
+
+Please don't upload a built APK to this repository. It contains the original game, and this fork is public.
+
+## About the original project
+
+Elvlin's Exvius Offline is built from the original Global game. You download the game data once and then play offline. You can get the published app from [Elvlin's releases](https://github.com/Elvlin/exvius-offline/releases), and report problems with it on [Elvlin's issue tracker](https://github.com/Elvlin/exvius-offline/issues).
+
+If you'd like to support the original author, Elvlin is on [Ko-fi](https://ko-fi.com/elvlin) and [Patreon](https://www.patreon.com/c/ElvlinGame).
 
 ## Screenshots
 
@@ -18,7 +71,7 @@ This project is still being worked on. It is unofficial and is not affiliated wi
 | :---: | :---: | :---: |
 | ![Home screen](release/screenshots/home.png) | ![Summon dropdown showing Standard, Seasons 1 to 4 and Collab](release/screenshots/summon-seasons.png) | ![Vortex dropdown showing All Events, Permanent, Seasons 1 to 4, Collab and Other Events](release/screenshots/vortex-seasons.png) |
 
-## What changed from the online game?
+## What the original project changed from the online game
 
 ### You can farm Lapis by replaying stages.
 
@@ -49,44 +102,16 @@ Bundles that used to cost real money are bought with Lapis. There is also a **2,
 
 Daily login rewards use your local save and date.
 
-
-## Install
-
-1. [Download the APK](https://github.com/Elvlin/exvius-offline/releases/download/v0.1.31/exvius-offline-v0.1.31.apk) from the [release page](https://github.com/Elvlin/exvius-offline/releases/tag/v0.1.31).
-2. Install it on an **Android 7.0 or newer phone with 64-bit ARM support**.
-3. Open it with an internet connection. The app downloads all the game data automatically, about **17.8 GB**. Allow about **21 GB of free space** for setup.
-4. Once setup is done, you can play offline.
-
-If the download stops, reopen the app to continue. You do not have to choose or download chapters separately.
-
-To update, install the newer APK over the existing app. **Uninstalling the app can erase your save.**
-
-## Updates and offline play
-
-When you open the app online, it checks GitHub for updates. If there is nothing new, it uses the files already on your phone. If you are offline, it skips the check and uses your downloaded data.
-
-Changed data downloads in the background and is installed after you close and reopen the app. Existing data is reused across app updates.
-
-## Still being worked on
-
-Some advanced upgrades and event interactions still need fixes. Loading can also be slow on some devices. 
-Restored text, artwork and events may have mistakes, so please report anything you find.
-To report a problem, [open an issue](https://github.com/Elvlin/exvius-offline/issues). Tell me which screen or quest you were on, what you tried and what happened. A screenshot helps.
-
-## Support or get in touch
-
-If you would like to support the project, you can find me on [Ko-fi](https://ko-fi.com/elvlin) or [Patreon](https://www.patreon.com/c/ElvlinGame).
-
-You can also contact me there if you have a project request or an idea you want to discuss. 
-
 ## Files in this repository
 
-- [source/](source/): the code and build instructions.
-- [release/](release/): the APK, screenshots and release notes.
+- [source/](source/): the code and build scripts.
+- [release/](release/): the original project's APK, screenshots and release notes.
 - [data/](data/): information about the downloadable game data.
-
-The APK is in the release folder. The large game data packs are in GitHub Releases and download automatically when you first open the app.
+- [PERSONAL_BUILD.md](PERSONAL_BUILD.md): how to build and install Exvius 2.0.
+- [SUMMON_RATES.md](SUMMON_RATES.md): how summons work and how to change the rates.
 
 ## Credits
+
+Exvius Offline was made by [Elvlin](https://github.com/Elvlin). This fork's changes are by HomoYouDidnt.
 
 Final Fantasy Brave Exvius and its original characters, artwork, music and other game content belong to their respective owners, including Square Enix and gumi. This is an unofficial fan project.
