@@ -63,8 +63,6 @@ In short:
 
 A save copied from the original app should load, because the original's newer engine writes the same save fields, but that hasn't been tried yet. The original app keeps its own save either way.
 
-Please don't upload a built APK to this repository. It contains the original game, and this fork is public.
-
 ## About the original project
 
 Elvlin's Exvius Offline is built from the original Global game. You download the game data once and then play offline. You can get the published app from [Elvlin's releases](https://github.com/Elvlin/exvius-offline/releases), and report problems with it on [Elvlin's issue tracker](https://github.com/Elvlin/exvius-offline/issues).
