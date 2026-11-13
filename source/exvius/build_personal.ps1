@@ -39,6 +39,13 @@ try {
     if (Test-Path -LiteralPath source/build/android/client) { Remove-Item -LiteralPath source/build/android/client -Recurse -Force }
     java -jar tools/vendor/apktool_3.0.3.jar d --no-src -p tools/vendor/apktool-framework -o source/build/android/client $original
     if ($LASTEXITCODE -ne 0) { throw 'APK decoding failed' }
+    # The offline changes edit the original Java code (smali), which the resource-only decode above
+    # leaves out. Decode it once from the same verified APK; later builds reuse it.
+    $decodedCode = 'source/build/android/decoded-code'
+    if (-not (Test-Path -LiteralPath "$decodedCode/smali/com/square_enix/android_googleplay/FFBEWW/GooglePlayLapis.smali")) {
+        java -jar tools/vendor/apktool_3.0.3.jar d -f --no-res -p tools/vendor/apktool-framework -o $decodedCode $original
+        if ($LASTEXITCODE -ne 0) { throw 'Java code decoding failed' }
+    }
     java -cp source/memorial/android/gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain -p source/memorial/android --no-daemon assembleDebug
     if ($LASTEXITCODE -ne 0) { throw 'Android runtime build failed' }
     python source/exvius/android_build.py --local-engine --speed 1 --package $Package --label $Label --release-version $Version --release-code $VersionCode
