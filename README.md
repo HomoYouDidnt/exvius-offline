@@ -41,7 +41,7 @@ A second launcher icon, **Exvius 2.0 Settings**, holds these. They apply without
 ### Speed and fixes
 
 - **Less lag on the summon screen.** It used to re-read about 15 MB of banner files on every visit and tap. Those files are now read once, and saves are about 18 times faster.
-- **Less work every frame.** The animation and banner-scroll hooks that ran every frame now run in native code, with the old version kept as a fallback.
+- **Less work every frame (off for now).** Native versions of the per-frame animation and banner-scroll hooks are in the code, but they crashed at startup on a Pixel 7 (Android 17), so the original hooks run instead until that's fixed.
 - **Smaller summon seasons.** Seasons 2, 3 and 4 are each split in two by release year (for example "S2 2017-18" and "S2 2019-20"), so their lists are shorter.
 - **Tall screens:** the town fast-travel list no longer runs under its bottom bar.
 - **Update check:** the update file is fetched directly with retries, and failures show a clear message.
