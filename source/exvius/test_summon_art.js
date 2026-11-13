@@ -11,7 +11,7 @@ const sizeSymbol = '_ZN10GameSprite7setSizeEff';
 const layoutSymbol = '_ZN13GachaTopScene13setListLayoutEv';
 const buttonSymbol = '_ZN12SpriteButton19initForChangeSpriteEiffiP10GameSpriteS1_ib';
 const source = fs.readFileSync(path.join(__dirname, 'summon_art.js'), 'utf8')
-  .replace(/^import .*;\r?$/gm, '').replace(/export function /g, 'function ');
+  .replace(/^import .*;\r?$/gm, '').replace(/export (function|const) /g, '$1 ');
 const context = {
   artwork: JSON.parse(fs.readFileSync(path.join(__dirname, '../server/summon_art.json'), 'utf8')),
   NativeFunction: function (symbol) {
