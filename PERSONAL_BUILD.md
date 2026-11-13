@@ -17,7 +17,11 @@ What's different from the published build:
 You need the same tools as a normal build (see `source/README.md`): Java 11, Python 3.10, Node.js, Android SDK
 platform 33 with build-tools 36.0.0, and `tools/vendor/` (apktool 3.0.3 and its framework folder, Frida Gadget
 17.24.3 arm64, frida-compile under `tools/vendor/android-agent`, the vendored Python). Put the original Global
-v9.0.0 APK at `repository snapshots/FFBE-Global-v9.0.0-original.apk`.
+v9.0.0 APK at `repository snapshots/FFBE-Global-v9.0.0-original.apk` (SHA-256 in `source/README.md`).
+
+Neither `tools/vendor/` nor the original APK is in this repository: you gather both yourself. Python 3.10 has to be
+the `python` on your PATH while building, because Chaquopy checks its version. You also need a signing key; `keytool`
+from the JDK makes one.
 
 ```powershell
 $env:JAVA_HOME = 'C:\path\to\jdk-11'
