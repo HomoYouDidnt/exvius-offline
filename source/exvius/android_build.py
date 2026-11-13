@@ -13,6 +13,7 @@ import subprocess
 import zipfile
 import xml.etree.ElementTree as ET
 import argparse
+import re
 import os
 
 PROJECT = Path(__file__).resolve().parents[2]
@@ -39,8 +40,16 @@ def main():
                         help='Override the bundled Frida Gadget for local runtime compatibility testing.')
     parser.add_argument('--frida-listen', action='store_true',
                         help='Wait for a local Frida host to inject the compiled test bundle.')
+    parser.add_argument('--package', default='com.exvius.offline.test',
+                        help='Android application id. A different id installs as a separate app beside '
+                             'the published Exvius Offline, with its own save and game data.')
+    parser.add_argument('--label', help='Home screen name for the game (default: Exvius).')
     args = parser.parse_args()
-    label = 'Exvius TEST ONLY 10x' if args.speed == 10 else 'Exvius'
+    if not re.fullmatch(r'[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+', args.package):
+        parser.error('--package must look like com.example.app (lower case).')
+    label = 'Exvius TEST ONLY 10x' if args.speed == 10 else (args.label or 'Exvius')
+    launcher_label = args.label or 'Exvius Offline'
+    settings_label = (args.label + ' Settings') if args.label else 'Exvius Settings'
     if args.map_interaction_audit:
         label = 'Exvius TEST MAP ' + str(args.speed) + 'x'
     if not args.local_engine:
@@ -176,7 +185,7 @@ def main():
     manifest = client / 'AndroidManifest.xml'
     tree = ET.parse(manifest)
     original_package = 'com.square_enix.android_googleplay.FFBEWW'
-    test_package = 'com.exvius.offline.test'
+    test_package = args.package
     tree.getroot().set('package', test_package)
     for permission in list(tree.getroot().findall('uses-permission')):
         if permission.get(ANDROID + 'name') in {
@@ -196,10 +205,26 @@ def main():
                  'android.permission.REQUEST_INSTALL_PACKAGES'):
         if not any(p.get(ANDROID + 'name') == name for p in tree.getroot().findall('uses-permission')):
             ET.SubElement(tree.getroot(), 'uses-permission', {ANDROID + 'name': name})
+    published_package = 'com.exvius.offline.test'
     for provider in tree.getroot().iter('provider'):
         authority = provider.get(ANDROID + 'authorities')
         if authority:
-            provider.set(ANDROID + 'authorities', authority.replace(original_package, test_package))
+            authority = authority.replace(original_package, test_package)
+            # A client folder prepared by an earlier build already carries the published id.
+            if test_package != published_package:
+                authority = ';'.join(test_package + a[len(published_package):]
+                                     if a == published_package or a.startswith(published_package + '.') else a
+                                     for a in authority.split(';'))
+            provider.set(ANDROID + 'authorities', authority)
+    if test_package != published_package:
+        # Android refuses to install a second app that declares a permission an app signed with another
+        # key already declares (the published app keeps the original game's DYNAMIC_RECEIVER_NOT_EXPORTED
+        # permission). androidx builds that name from the running package, so follow the new id.
+        for element in list(tree.getroot().iter('permission')) + list(tree.getroot().iter('uses-permission')):
+            name = element.get(ANDROID + 'name', '')
+            for prefix in (original_package + '.', published_package + '.'):
+                if name.startswith(prefix):
+                    element.set(ANDROID + 'name', test_package + '.' + name[len(prefix):])
     app = tree.getroot().find('application')
     # The original game library has 4 KB ELF segments. Android 16 can
     # load it through its compatibility mode on devices with 16 KB pages.
@@ -290,7 +315,7 @@ def main():
         ANDROID + 'name': 'com.exvius.local.DataDownloadActivity',
         ANDROID + 'exported': 'true', ANDROID + 'screenOrientation': 'portrait',
         ANDROID + 'theme': '@android:style/Theme.Material.NoActionBar',
-        ANDROID + 'label': 'Exvius Offline',
+        ANDROID + 'label': launcher_label,
     })
     intent = ET.SubElement(launcher, 'intent-filter')
     ET.SubElement(intent, 'action', {ANDROID + 'name': 'android.intent.action.MAIN'})
@@ -304,7 +329,7 @@ def main():
         ANDROID + 'name': 'com.exvius.local.SaveTransferActivity',
         ANDROID + 'exported': 'true', ANDROID + 'screenOrientation': 'portrait',
         ANDROID + 'theme': '@android:style/Theme.Material.NoActionBar',
-        ANDROID + 'label': 'Exvius Settings',
+        ANDROID + 'label': settings_label,
         ANDROID + 'taskAffinity': test_package + '.settings',
     })
     intent = ET.SubElement(backup, 'intent-filter')
@@ -314,7 +339,6 @@ def main():
     config = client / 'apktool.yml'
     text = config.read_text(encoding='utf-8')
     suffix = '-exvius-test10' if args.speed == 10 else '-exvius'
-    import re
     text = re.sub(r'(?m)^(\s*)versionName: 9\.0\.0(?:-exvius(?:-test10)?)?$', r'\g<1>versionName: 9.0.0' + suffix, text)
     text = text.replace('minSdkVersion: 21\n', 'minSdkVersion: 24\n')
     if args.release_version:

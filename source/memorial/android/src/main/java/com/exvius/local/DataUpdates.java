@@ -30,6 +30,7 @@ import org.json.JSONObject;
 
 /** One complete first download, cached offline play, and static release updates. */
 public final class DataUpdates {
+    private static final String PUBLISHED_PACKAGE = "com.exvius.offline.test";
     private static final String LATEST = "https://raw.githubusercontent.com/Elvlin/exvius-offline/main/data/latest.json";
     private static final String ASSETS = "https://github.com/Elvlin/exvius-offline/releases/download/";
     private static final AtomicBoolean working = new AtomicBoolean();
@@ -580,7 +581,10 @@ public final class DataUpdates {
                         }
                     }
                     JSONObject app = manifest.optJSONObject("app");
-                    if (app != null && app.optInt("versionCode") > appVersion(context))
+                    // The published APK replaces only the published app id. A personal build under its own
+                    // id (android_build.py --package) still takes the shared game data, never that APK.
+                    if (app != null && PUBLISHED_PACKAGE.equals(context.getPackageName()) &&
+                        app.optInt("versionCode") > appVersion(context))
                         downloadApp(context, app);
                 }
                 Progress current = listener;
