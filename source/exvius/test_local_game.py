@@ -1211,8 +1211,14 @@ class LocalGameIntegration(unittest.TestCase):
         self.assertTrue(all(r['uYcL8IQ1'] == '-1' for r in reply['F2rNo6qf']))
         self.assertNotIn('2147483647', {r['uYcL8IQ1'] for r in reply['TPrh6Ay3']})
         self.assertIn('20:293000100:1', {r['P4puB2ch'] for r in reply['TPrh6Ay3']})
+        unit_tabs = [r for r in reply['F2rNo6qf'] if r['6uvHX2JG'].startswith('Unit Shop')]
+        self.assertTrue(unit_tabs)
+        unit_rows = [r for r in reply['TPrh6Ay3'] if r['P4puB2ch'].startswith('10:')
+                     and int(r['jPV7Xc4N']) >= 1000000000]
+        self.assertGreater(len(unit_rows), 1000)
+        self.assertEqual({r['e4mG8jTc'] for r in unit_rows}, {'1'})
         coin_shops = [r for r in reply['F2rNo6qf'] if r['JV8AIH3n'] == '6']
-        self.assertEqual(len(coin_shops), 3)
+        self.assertEqual(len(coin_shops), 3 + len(unit_tabs))
         self.assertTrue(all(r['0GgK6ytT'] == '50:1' for r in coin_shops))
         self.assertTrue(all(r['0GgK6ytT'] != '50:1' for r in reply['F2rNo6qf']
                             if r['JV8AIH3n'] in ('4', '5')))

@@ -34,7 +34,7 @@ import org.json.JSONObject;
  * and a build signed with a different key can only be installed after uninstalling. This screen is the
  * way to carry a save across any of those. It has its own launcher icon ("Exvius Settings") because
  * the game itself starts straight from the main icon. The same screen holds the game speed setting and
- * the summon and lapis multipliers (written to files/exvius/tweaks.json, read by server/player_tweaks.py).
+ * the summon and lapis multipliers and the Unit Shop price (written to files/exvius/tweaks.json, read by server/player_tweaks.py).
  */
 public final class SaveTransferActivity extends Activity {
     private static final int EXPORT = 1, IMPORT = 2;
@@ -50,8 +50,11 @@ public final class SaveTransferActivity extends Activity {
     // Lapis summon price: the banner's own price, half, or 1 lapis for any lapis summon (single or multi).
     static final String[] COST = {"original", "half", "1"};
     private static final String[] COST_LABELS = {"Normal", "Half", "1 lapis"};
+    // Unit Shop price per unit (server/exvius_shop_catalogue.py): 1 lapis or free.
+    static final String[] UNIT_SHOP = {"1", "free"};
+    private static final String[] UNIT_SHOP_LABELS = {"1 lapis", "Free"};
     private static final String[] RARE_RARITIES = {"5", "6", "7"};
-    private String rare = "1", featured = "1", lapis = "1", cost = "original";
+    private String rare = "1", featured = "1", lapis = "1", cost = "original", unitShop = "1";
     private TextView status;
 
     static String speed(android.content.Context context) {
@@ -63,10 +66,10 @@ public final class SaveTransferActivity extends Activity {
         return new File(context.getFilesDir(), "exvius/tweaks.json");
     }
 
-    /** {rare, featured, lapis, cost} when the file holds this screen's choices (no file = defaults), else null. */
+    /** {rare, featured, lapis, cost, unit shop} when the file holds this screen's choices (no file = defaults), else null. */
     static String[] readTweaks(android.content.Context context) {
         File file = tweaksFile(context);
-        if (!file.isFile()) return new String[]{"1", "1", "1", "original"};
+        if (!file.isFile()) return new String[]{"1", "1", "1", "original", "1"};
         try {
             JSONObject root = new JSONObject(new String(readAll(new FileInputStream(file)), StandardCharsets.UTF_8));
             JSONObject rarity = root.optJSONObject("rarity_multiplier");
@@ -80,9 +83,11 @@ public final class SaveTransferActivity extends Activity {
             String featuredValue = number(root.optDouble("featured_multiplier", 1));
             String lapisValue = number(root.optDouble("lapis_multiplier", 1));
             String costValue = root.optString("lapis_summon_cost", "original");
+            String unitShopValue = root.optString("unit_shop_price", "1");
             if (!Arrays.asList(RARE).contains(rareValue) || !Arrays.asList(FEATURED).contains(featuredValue) ||
-                !Arrays.asList(LAPIS).contains(lapisValue) || !Arrays.asList(COST).contains(costValue)) return null;
-            return new String[]{rareValue, featuredValue, lapisValue, costValue};
+                !Arrays.asList(LAPIS).contains(lapisValue) || !Arrays.asList(COST).contains(costValue) ||
+                !Arrays.asList(UNIT_SHOP).contains(unitShopValue)) return null;
+            return new String[]{rareValue, featuredValue, lapisValue, costValue, unitShopValue};
         } catch (Exception error) {
             return null;
         }
@@ -94,10 +99,10 @@ public final class SaveTransferActivity extends Activity {
 
     /** Writes the multipliers atomically; all at 1 removes the file (the game's own numbers). */
     static void writeTweaks(android.content.Context context, String rareValue, String featuredValue,
-                            String lapisValue, String costValue) throws Exception {
+                            String lapisValue, String costValue, String unitShopValue) throws Exception {
         File file = tweaksFile(context);
         if ("1".equals(rareValue) && "1".equals(featuredValue) && "1".equals(lapisValue) &&
-                "original".equals(costValue)) {
+                "original".equals(costValue) && "1".equals(unitShopValue)) {
             if (file.isFile() && !file.delete()) throw new IOException("Could not reset the multipliers");
             return;
         }
@@ -109,6 +114,7 @@ public final class SaveTransferActivity extends Activity {
         root.put("featured_multiplier", Double.parseDouble(featuredValue));
         root.put("lapis_multiplier", Double.parseDouble(lapisValue));
         root.put("lapis_summon_cost", costValue);
+        root.put("unit_shop_price", unitShopValue);
         File folder = file.getParentFile();
         if (folder != null && !folder.isDirectory() && !folder.mkdirs()) throw new IOException("Cannot create the data folder");
         File partial = new File(folder, "tweaks.json.tmp");
@@ -169,19 +175,22 @@ public final class SaveTransferActivity extends Activity {
         }));
         String[] tweaks = readTweaks(this);
         boolean custom = tweaks == null;
-        if (!custom) { rare = tweaks[0]; featured = tweaks[1]; lapis = tweaks[2]; cost = tweaks[3]; }
+        if (!custom) { rare = tweaks[0]; featured = tweaks[1]; lapis = tweaks[2]; cost = tweaks[3]; unitShop = tweaks[4]; }
         TextView rareLabel = label(custom ?
             "Summon and lapis settings: a custom tweaks.json is in use. Picking an option below replaces it.\n\n5\u2605 and Neo Vision chance" :
             "Summon rates (the Drop Rates screen shows the exact odds)\n\n5\u2605 and Neo Vision chance", padding);
         page.addView(rareLabel);
-        page.addView(choices(RARE, custom ? "" : rare, 2000, value -> saveTweaks(value, featured, lapis, cost)));
+        page.addView(choices(RARE, custom ? "" : rare, 2000, value -> saveTweaks(value, featured, lapis, cost, unitShop)));
         page.addView(label("Rate-up units on top of that", 0));
-        page.addView(choices(FEATURED, custom ? "" : featured, 3000, value -> saveTweaks(rare, value, lapis, cost)));
+        page.addView(choices(FEATURED, custom ? "" : featured, 3000, value -> saveTweaks(rare, value, lapis, cost, unitShop)));
         page.addView(label("Lapis gained (missions, rank-ups, quests, mail; spending unchanged)", padding));
-        page.addView(choices(LAPIS, custom ? "" : lapis, 4000, value -> saveTweaks(rare, featured, value, cost)));
+        page.addView(choices(LAPIS, custom ? "" : lapis, 4000, value -> saveTweaks(rare, featured, value, cost, unitShop)));
         page.addView(label("Lapis summon price (reopen the summon screen to see it)", padding));
         page.addView(choices(COST, COST_LABELS, custom ? "" : cost, 5000,
-            value -> saveTweaks(rare, featured, lapis, value)));
+            value -> saveTweaks(rare, featured, lapis, value, unitShop)));
+        page.addView(label("Unit Shop price per unit (the Unit Shop tabs in the exchange shop; reopen it to see)", padding));
+        page.addView(choices(UNIT_SHOP, UNIT_SHOP_LABELS, custom ? "" : unitShop, 6000,
+            value -> saveTweaks(rare, featured, lapis, cost, value)));
         page.addView(label("Save backup", padding));
         Button export = new Button(this);
         export.setText("Export save to a file");
@@ -234,18 +243,21 @@ public final class SaveTransferActivity extends Activity {
         return group;
     }
 
-    private void saveTweaks(String rareValue, String featuredValue, String lapisValue, String costValue) {
+    private void saveTweaks(String rareValue, String featuredValue, String lapisValue, String costValue,
+                            String unitShopValue) {
         try {
-            writeTweaks(this, rareValue, featuredValue, lapisValue, costValue);
+            writeTweaks(this, rareValue, featuredValue, lapisValue, costValue, unitShopValue);
             rare = rareValue;
             featured = featuredValue;
             lapis = lapisValue;
             cost = costValue;
+            unitShop = unitShopValue;
             String price = COST_LABELS[Math.max(0, Arrays.asList(COST).indexOf(costValue))].toLowerCase(Locale.ROOT);
             status.setText(!tweaksFile(this).isFile() ?
-                "Summon rates, lapis gains and prices are back to the game's own numbers." :
+                "Summon rates, lapis gains and prices are back to the game's own numbers (Unit Shop 1 lapis)." :
                 "5\u2605/NV summons x" + rareValue + ", rate-up units x" + featuredValue +
-                ", lapis gained x" + lapisValue + ", lapis summon price " + price + ". Applies right away.");
+                ", lapis gained x" + lapisValue + ", lapis summon price " + price + ", Unit Shop " +
+                ("free".equals(unitShopValue) ? "free" : "1 lapis per unit") + ". Applies right away.");
         } catch (Exception error) {
             android.util.Log.w("ExviusSave", "Multiplier setting failed", error);
             status.setText("Couldn't save the setting: " +

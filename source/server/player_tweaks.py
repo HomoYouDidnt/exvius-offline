@@ -22,7 +22,8 @@ means the game's own numbers. Example:
       "rarity_multiplier": {"5": 3, "7": 3},
       "featured_multiplier": 2,
       "lapis_multiplier": 3,
-      "lapis_summon_cost": "half"
+      "lapis_summon_cost": "half",
+      "unit_shop_price": "free"
     }
 
 `rarity_multiplier` scales every row of that base rarity (7 = Neo Vision). `featured_multiplier` scales
@@ -37,6 +38,9 @@ Result screens still print the original amount; the top bar shows the real balan
 (every lapis summon, single or multi, costs 1 lapis). Both the price the summon screen shows and the
 amount charged go through `summon_cost`, so they always agree. Ticket, friend point and item costs are
 unchanged.
+
+`unit_shop_price` is what one unit costs in the Unit Shop tabs (`exvius_shop_catalogue.unit_shops`):
+"1" (1 lapis, the default) or "free".
 """
 from __future__ import annotations
 
@@ -92,6 +96,8 @@ def settings() -> dict:
         cost = str(raw.get("lapis_summon_cost") or "").strip().lower()
         if cost in ("half", "1"):
             value["lapis_summon_cost"] = cost
+        if str(raw.get("unit_shop_price") or "").strip().lower() == "free":
+            value["unit_shop_price"] = 0
         lapis = _number(raw.get("lapis_multiplier"))
         if lapis is not None and lapis != 1:
             value["lapis_multiplier"] = lapis
@@ -115,6 +121,11 @@ def summon_cost(kind, amount: int) -> int:
     if not mode or amount <= 0 or str(kind) not in ("lapis", "50"):
         return amount
     return 1 if mode == "1" else max(1, amount // 2)
+
+
+def unit_shop_price() -> int:
+    """Lapis for one unit in the Unit Shop: 1 unless the player picked "free"."""
+    return int(settings().get("unit_shop_price", 1))
 
 
 def lapis_gain(amount: int) -> int:

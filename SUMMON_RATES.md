@@ -48,7 +48,8 @@ it changes. It accepts finer values than the screen offers:
   "rarity_multiplier": {"5": 3, "6": 3, "7": 3, "4": 1.5},
   "featured_multiplier": 2,
   "lapis_multiplier": 2.5,
-  "lapis_summon_cost": "half"
+  "lapis_summon_cost": "half",
+  "unit_shop_price": "free"
 }
 ```
 
@@ -57,6 +58,7 @@ it changes. It accepts finer values than the screen offers:
 - `lapis_multiplier` scales lapis gains in `State.add_currency`, the one place lapis is credited.
 - `lapis_summon_cost` is `"half"` or `"1"`. The shown price and the charge both go through
   `summon_cost`, so the screen and your balance always agree.
+- `unit_shop_price` is `"1"` (the default) or `"free"`: what one unit costs in the Unit Shop.
 - No file, or a broken one, means the game's own numbers.
 - Multipliers are capped at 1000. Negative or non-numeric values are ignored.
 
@@ -65,3 +67,16 @@ Because weights are normalised, a multiplier isn't a flat percentage. 5x on a 1%
 
 The rate multipliers don't touch guarantees, step-up structure, box summons, or item pools such as reward
 summons.
+
+## Unit Shop
+
+The exchange shop has Unit Shop tabs next to the VIP and coin shops. They sell every unit a summon can
+give, one copy at a time, with no limit, for 1 lapis each (or free, from Exvius Settings).
+
+- Units come at their base rarity, the same form a summon gives: a 5★ base unit arrives at 5★ and
+  awakens the usual way. Extra copies work as awakening and enhancement copies.
+- Neo Vision units have their own tabs. Brave Shift forms aren't sold separately; they come with their NV unit.
+- The list is built from the game's unit table (`F_UNIT_MST`) the first time the shop opens:
+  `exvius_shop_catalogue.unit_shops`. It leaves out units with no name (the result screen crashes on
+  them) and the 9xxxxxxxx material units (moogles, pots, cactuars).
+- Long lists are split into tabs of up to 250 units, sorted by name.

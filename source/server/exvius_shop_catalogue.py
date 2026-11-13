@@ -37,6 +37,63 @@ FULL_STOCK = {
 # would only mint another dead ticket.
 SKIP_PRODUCTS = {'258031'}
 
+# Unit Shop: every unit a summon could give, one copy per purchase, priced by player_tweaks
+# (1 lapis or free). Long lists are split into tabs of at most UNIT_SHOP_TAB units, by name.
+UNIT_SHOP_TAB = 250
+UNIT_SHOP_GROUPS = (('7', 'Neo Vision'), ('5', '5\u2605 base'), ('4', '4\u2605 base'),
+                    ('3', '1-3\u2605 base'), ('2', '1-3\u2605 base'), ('1', '1-3\u2605 base'))
+UNIT_SHOP_PRODUCT = 1000000000  # + the unit id, so a unit keeps its product id across updates
+
+
+def _unit_names():
+    names = {}
+    path = Path(TEXT_DIR) / 'F_TEXT_UNITS_NAME.ndjson'
+    for line in path.read_text(encoding='utf-8').splitlines():
+        if line.strip():
+            row = json.loads(line)
+            names[row['key'].rsplit('_', 1)[-1]] = row['v'][0].strip()
+    return names
+
+
+def unit_shops():
+    """[(tab title, [(unit id, label)])] for the Unit Shop.
+
+    The units are the series roots a summon pool draws from (player_state.unit_roots_by_rarity):
+    rows whose id is their own family root, at their base rarity. Left out: units with no name row
+    (the award screen crashes on them), Brave Shift forms (another row's JPW8Vs40 points at them;
+    they come with their NV unit) and the 9xxxxxxxx material units (moogles, pots, cactuars).
+    Neo Vision units are the roots whose base rarity is 7."""
+    names = _unit_names()
+    rows = _rows('F_UNIT_MST')
+    shifted = {str(r.get('JPW8Vs40') or '') for r in rows
+               if str(r.get('JPW8Vs40') or '') not in ('', '0', str(r.get('3HriTp6B')))}
+    groups = defaultdict(list)
+    for row in rows:
+        uid = str(row.get('3HriTp6B', ''))
+        if (uid != str(row.get('woghJa61')) or names.get(uid, '<na>') in ('', '<na>')
+                or uid.startswith('9') or uid in shifted):
+            continue
+        title = dict(UNIT_SHOP_GROUPS).get(str(row.get('9fW0TePj')))
+        if title is None:
+            continue
+        label = names[uid]
+        if str(row.get('9fW0TePj')) == '7' and 'Neo Vision' not in label:
+            label += ' (NV)'
+        groups[title].append((uid, label))
+    tabs = []
+    for title in dict.fromkeys(t for _, t in UNIT_SHOP_GROUPS):
+        units = sorted(groups.get(title, []), key=lambda u: (u[1].lower(), int(u[0])))
+        parts = max(1, -(-len(units) // UNIT_SHOP_TAB))
+        size = -(-len(units) // parts) if units else 0
+        for start in range(0, len(units), size or 1):
+            chunk = units[start:start + size]
+            name = 'Unit Shop: ' + title
+            if parts > 1:
+                first, last = (u[1][:1].upper() for u in (chunk[0], chunk[-1]))
+                name += ' (' + (first if first.isalpha() else 'A') + '-' + last + ')'
+            tabs.append((name, chunk))
+    return tabs
+
 
 @lru_cache(maxsize=1)
 def catalogue():
@@ -66,7 +123,7 @@ def catalogue():
                         '6uvHX2JG': title, 'VjJQ51uG': START, 'm8ivD4NX': END,
                         '0GgK6ytT': str(kind) + ':' + str(currency)})
 
-    def product(pid, did, reward, price, limit, currency, monthly=False):
+    def product(pid, did, reward, price, limit, currency, monthly=False, label=None):
         row = {'jPV7Xc4N': str(pid), '3X1gLufw': str(did), 'P4puB2ch': reward,
                'e4mG8jTc': str(price), 'uYcL8IQ1': str(-1 if int(limit) == 2147483647 else limit),
                'Z0EN6jSh': str(len(products) + 1),
@@ -74,6 +131,8 @@ def catalogue():
         products.append(row)
         offers[str(pid)] = {'detail': str(did), 'rewards': parse(reward), 'cost': currency,
                             'price': int(price), 'limit': int(limit), 'monthly': monthly}
+        if label:
+            offers[str(pid)]['label'] = label
 
     for index, (currency, stock) in enumerate(sorted(currencies.items(), key=lambda pair: int(pair[0]))):
         did = 850000000 + index
@@ -122,7 +181,23 @@ def catalogue():
             limit = int(row['x0NDnEC9']) if row['kR4n5DxP'] == '1' else 2147483647
             product(900000000 + int(row['S21FT3L8']), did, row['7iJpH5zZ'], row['Qy5EvcK1'],
                     limit, (20, currency))
+    # Unit Shop tabs sit with the other lapis shops (category 6). The listed price is the default;
+    # entry() and purchase() apply the player's current unit_shop_price.
+    for index, (title, units) in enumerate(unit_shops()):
+        did = 850003000 + index
+        detail(did, title, 50, '1', 6)
+        for uid, label in units:
+            product(UNIT_SHOP_PRODUCT + int(uid), did, '10:' + uid + ':1', 1, 2147483647,
+                    (50, '1'), label=label)
+            offers[str(UNIT_SHOP_PRODUCT + int(uid))]['unit_shop'] = True
     return details, products, offers
+
+
+def _price(offer):
+    if offer.get('unit_shop'):
+        from player_tweaks import unit_shop_price
+        return unit_shop_price()
+    return offer['price']
 
 
 def receipt_key(pid, offer):
@@ -145,6 +220,9 @@ def labels():
             names[kind, row['key'].rsplit('_', 1)[-1]] = row['v'][0].strip()
     result = {}
     for pid, offer in catalogue()[2].items():
+        if offer.get('label'):
+            result[pid] = {'name': offer['label'], 'description': 'Buy ' + offer['label'] + '.'}
+            continue
         texts = []
         for row in offer['rewards']:
             name = names.get((row['kind'], str(row['id'])), 'Reward ' + str(row['id']))
@@ -166,6 +244,10 @@ def entry(spec, req):
     out = _reply(spec)
     out['F2rNo6qf'] = [dict(row) for row in details]
     out['TPrh6Ay3'] = [dict(row) for row in products]
+    for row in out['TPrh6Ay3']:
+        offer = offers.get(row['jPV7Xc4N'])
+        if offer and offer.get('unit_shop'):
+            row['e4mG8jTc'] = str(_price(offer))
     counts = _feature('shop_catalogue').get('counts', {})
     out['qS62ewjH'] = [{'jPV7Xc4N': pid, '3X1gLufw': offer['detail'],
                         'Q8GLK1pz': str(counts.get(receipt_key(pid, offer), 0))}
@@ -187,7 +269,7 @@ def purchase(spec, req):
     rewards = [dict(row, count=row['count'] * quantity) for row in offer['rewards']]
     _rewards(rewards)
     kind, currency = offer['cost']
-    amount = offer['price'] * quantity
+    amount = _price(offer) * quantity
     if kind == 50:
         _require(State.player.spend_lapis(amount), 'not enough Lapis')
     else:
