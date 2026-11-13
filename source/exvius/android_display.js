@@ -220,7 +220,12 @@ void onDestroy (GumInvocationContext * ic)
 }
 `;
 
+// Off while a write fault on the GL thread during startup (Pixel 7, Android 17) is
+// tracked down: the JavaScript hook below does the same job, only slower.
+const NATIVE_HOOK = false;
+
 function nativeFrameGate(check, note) {
+  if (!NATIVE_HOOK) { note('FRAME_GATE_JS'); return null; }
   if (typeof CModule === 'undefined') return null;
   try {
     const callback = new NativeCallback(player => check(player) ? 1 : 0, 'int', ['pointer']);

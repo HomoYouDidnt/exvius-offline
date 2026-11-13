@@ -138,7 +138,12 @@ void onDestroy (GumInvocationContext * ic)
 }
 `;
 
+// Off while a write fault on the GL thread during startup (Pixel 7, Android 17) is
+// tracked down: the JavaScript hook below does the same job, only slower.
+const NATIVE_HOOK = false;
+
 function nativeArtCenter(module, note) {
+  if (!NATIVE_HOOK) { note('SUMMON_ART_CENTER_JS'); return null; }
   if (typeof CModule === 'undefined') return null;
   try {
     const exported = name => module.getExportByName(name);
