@@ -72,9 +72,12 @@ def wire_type(banner, code):
     return code
 
 
+_FAMILIES = []
 def _standard_families():
-    doc = json.loads(Path(__file__).with_name('gacha_standard.json').read_text(encoding='utf-8'))
-    return {str(row['id']) for row in doc.get('banners', [])}
+    if not _FAMILIES:
+        doc = json.loads(Path(__file__).with_name('gacha_standard.json').read_text(encoding='utf-8'))
+        _FAMILIES.append(frozenset(str(row['id']) for row in doc.get('banners', [])))
+    return _FAMILIES[0]
 
 
 def permanent(banner, families=None):
@@ -97,10 +100,23 @@ def _released(banner):
         return None
 
 
+# The grouping depends only on the banners' ids and static content, so it is worked out once per banner
+# list: it serialises every offer (pools included) and ran on each summon screen visit and menu tap.
+_GROUPS_CACHE = {}
+
+
 def catalogue(banners):
     """Every non-permanent banner belongs to exactly one group; the permanent summons
     appear with every group. Uncertain dates stay under Standard. Collab banners are
     ordered by series, and seasons by release date."""
+    key = tuple(str(banner['id']) for banner in banners)
+    if key not in _GROUPS_CACHE:
+        _GROUPS_CACHE.clear()
+        _GROUPS_CACHE[key] = _catalogue(banners)
+    return [dict(group, ids=list(group['ids'])) for group in _GROUPS_CACHE[key]]
+
+
+def _catalogue(banners):
     families = _standard_families()
     members = defaultdict(list)
     shared = []

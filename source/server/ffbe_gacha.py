@@ -162,12 +162,25 @@ def gacha_tutorial_award():
         return award.get("unitId"), award.get("granted_rarity")
     except (OSError, ValueError):
         return None, None
+# Parsed banner docs, keyed by path and reused while the file is unchanged. The catalogue and community
+# docs are 5 and 8 MB; re-parsing them on every all_banners() call cost a few hundred ms on a desktop and
+# seconds on a phone, several times per summon screen visit (some of it on the game's UI thread, through
+# the summon_archive bridge). Callers get the same banner dicts each time and must copy before changing one
+# (with_global_buttons, visible_banners and gacha_groups already do).
+_BANNER_DOCS: dict = {}
 def _banner_doc(path: str, *, offset: int = 0, limit: int = 0, note: str) -> list:
     """The `banners` list from one gacha doc, sliced by `offset`/`limit`; [] and a note when unreadable."""
     try:
-        with open(path, encoding="utf-8") as fh:
-            bs = [b for b in (json.load(fh).get("banners") or [])
-                  if isinstance(b, dict) and b.get("id")]
+        stat = os.stat(path)
+        key = (stat.st_mtime_ns, stat.st_size)
+        cached = _BANNER_DOCS.get(path)
+        if cached and cached[0] == key:
+            bs = cached[1]
+        else:
+            with open(path, encoding="utf-8") as fh:
+                bs = [b for b in (json.load(fh).get("banners") or [])
+                      if isinstance(b, dict) and b.get("id")]
+            _BANNER_DOCS[path] = (key, bs)
     except (OSError, ValueError) as exc:  # noqa: BLE001 - a bad doc must not kill the reply
         _note(f"gacha: {path} unreadable ({exc!r}) -- {note}")
         return []
