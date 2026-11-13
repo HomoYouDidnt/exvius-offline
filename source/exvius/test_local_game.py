@@ -1241,7 +1241,8 @@ class LocalGameIntegration(unittest.TestCase):
         self.assertNotIn('332000105', sold)
         coin_shops = [r for r in reply['F2rNo6qf'] if r['JV8AIH3n'] == '6']
         gear_tabs = [r for r in reply['F2rNo6qf'] if r['6uvHX2JG'].startswith('Gear Shop')]
-        self.assertEqual(len(coin_shops), 4 + len(unit_tabs) + len(gear_tabs))
+        item_tabs = [r for r in reply['F2rNo6qf'] if r['6uvHX2JG'].startswith('Item Shop')]
+        self.assertEqual(len(coin_shops), 4 + len(unit_tabs) + len(gear_tabs) + len(item_tabs))
         self.assertTrue(all(r['0GgK6ytT'] == '30:1' for r in coin_shops))
         self.assertTrue(all(r['0GgK6ytT'] != '30:1' for r in reply['F2rNo6qf']
                             if r['JV8AIH3n'] in ('4', '5')))
@@ -1354,6 +1355,35 @@ class LocalGameIntegration(unittest.TestCase):
                       {'4mrD6JuA': [{'jPV7Xc4N': row['jPV7Xc4N'], 'Qy5EvcK1': '2'}]})
         self.assertEqual(player.currencies['gil'], 0)
         self.assertEqual(owned(), before + 2)
+
+    def test_item_shop_sells_awakening_materials_and_other_exchange_rewards_for_gil(self):
+        from exvius_shop_catalogue import catalogue, item_shops
+        details, products, offers = catalogue()
+        tabs = item_shops()
+        self.assertEqual({kind for _, kind, _ in tabs}, {20, 23, 27, 60})
+        stock = {(kind, iid): price for _, kind, items in tabs for iid, _, price in items}
+        self.assertGreater(len([k for k in stock if k[0] == 20]), 800)
+        self.assertGreater(len([k for k in stock if k[0] == 60]), 400)
+        self.assertGreater(len([k for k in stock if k[0] == 27]), 200)
+        self.assertNotIn((23, '912'), stock)
+        item_details = {r['3X1gLufw'] for r in details if r['6uvHX2JG'].startswith('Item Shop')}
+        self.assertTrue(all(r['JV8AIH3n'] == '6' and r['0GgK6ytT'] == '30:1'
+                            for r in details if r['3X1gLufw'] in item_details))
+        rows = [r for r in products if r['3X1gLufw'] in item_details]
+        self.assertEqual(len(rows), len(stock))
+        self.assertEqual(len({r['jPV7Xc4N'] for r in products}), len(products))
+        self.assertTrue(all(int(r['jPV7Xc4N']) < 2**31 and r['uYcL8IQ1'] == '-1' for r in rows))
+        row = next(r for r in rows if r['P4puB2ch'].startswith('20:'))
+        kind, iid, _ = row['P4puB2ch'].split(':')
+        price = stock[int(kind), iid]
+        self.assertEqual(int(row['e4mG8jTc']), price)
+        player = self.game.server.State.player
+        player.currencies['gil'] = price * 3
+        before = player.item_count(20, iid)
+        self.exchange('GachaSelectExchangeExeRequest',
+                      {'4mrD6JuA': [{'jPV7Xc4N': row['jPV7Xc4N'], 'Qy5EvcK1': '3'}]})
+        self.assertEqual(player.currencies['gil'], 0)
+        self.assertEqual(player.item_count(20, iid), before + 3)
 
     def test_real_stage_other_challenge_rewards_stay_one_time(self):
         player = self.game.server.State.player

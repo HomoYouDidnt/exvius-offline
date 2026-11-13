@@ -50,7 +50,14 @@ SHOP_CURRENCY = (30, '1')
 # per purchase, for the same number of gil as its cheapest exchange price, no buy limit. Product ids
 # count up from GEAR_SHOP_PRODUCT in item-id order (equipment ids don't fit beside an offset).
 GEAR_SHOP_PRODUCT = 970000000
-GEAR_SHOP_KINDS = ((21, 'ITEM_EQUIP', 'Equipment'), (22, 'MATERIA', 'Materia'))
+GEAR_SHOP_KINDS = ((21, 'ITEM_EQUIP', 'Equipment', ''), (22, 'MATERIA', 'Materia', ''))
+# Item Shop: the same for every other single reward a merchant exchange sold: items (awakening
+# materials, crystals, potions, event currencies), recipes, vision cards and tickets. Product ids
+# count up from ITEM_SHOP_PRODUCT the same way. 23:912 is left out: its icon is not in the item packs.
+ITEM_SHOP_PRODUCT = 975000000
+ITEM_SHOP_KINDS = ((20, 'ITEM', 'Items', ''), (60, 'RECIPE_BOOK', 'Recipes', ' (Recipe)'),
+                   (27, 'VISION_CARD', 'Vision Cards', ''), (23, 'IMPORTANT_ITEM', 'Tickets', ''))
+ITEM_SHOP_SKIP = {(23, '912')}
 
 
 def _units_with_icons():
@@ -127,12 +134,14 @@ def _split_tabs(prefix, items):
     return tabs
 
 
-def gear_shops():
-    """[(tab title, kind, [(item id, label, gil price)])] for the Gear Shop.
+def _exchange_shops(shop, kinds, skip=()):
+    """[(tab title, kind, [(item id, label, gil price)])] for a shop of exchange rewards.
 
-    Every equipment and materia reward in F_MEDAL_EXCHANGE_MST (the merchant exchanges, whose own
-    currencies the game checks on the phone), at its cheapest price per piece in that exchange's
-    currency, charged as the same number of gil. Pieces with no name row are left out."""
+    Every reward of the given kinds that F_MEDAL_EXCHANGE_MST (the merchant exchanges, whose own
+    currencies the game checks on the phone) sells on its own, at its cheapest price per piece in
+    that exchange's currency, charged as the same number of gil. Rewards with no name row are left
+    out (the award screen crashes on them)."""
+    wanted = {kind for kind, _, _, _ in kinds}
     best = {}
     for row in _rows('F_MEDAL_EXCHANGE_MST'):
         try:
@@ -143,23 +152,33 @@ def gear_shops():
         if len(rewards) != 1 or price <= 0:
             continue
         reward = rewards[0]
-        if reward['kind'] not in (21, 22):
-            continue
         key = (reward['kind'], str(reward['id']))
+        if reward['kind'] not in wanted or key in skip or reward['count'] <= 0:
+            continue
         each = max(1, -(-price // reward['count']))
         best[key] = min(best.get(key, each), each)
     tabs = []
-    for kind, table, title in GEAR_SHOP_KINDS:
+    for kind, table, title, suffix in kinds:
         names = {}
         path = Path(TEXT_DIR) / ('F_TEXT_' + table + '_NAME.ndjson')
         for line in path.read_text(encoding='utf-8').splitlines():
             if line.strip():
                 row = json.loads(line)
                 names[row['key'].rsplit('_', 1)[-1]] = row['v'][0].strip()
-        items = [(iid, names[iid]) for (k, iid) in best if k == kind and names.get(iid)]
-        for name, chunk in _split_tabs('Gear Shop: ' + title, items):
+        items = [(iid, names[iid] + suffix) for (k, iid) in best if k == kind and names.get(iid)]
+        for name, chunk in _split_tabs(shop + ': ' + title, items):
             tabs.append((name, kind, [(iid, label, best[kind, iid]) for iid, label in chunk]))
     return tabs
+
+
+def gear_shops():
+    """Gear Shop tabs: every exchange equipment and materia piece (see _exchange_shops)."""
+    return _exchange_shops('Gear Shop', GEAR_SHOP_KINDS)
+
+
+def item_shops():
+    """Item Shop tabs: every other exchange item, recipe, vision card and ticket (see _exchange_shops)."""
+    return _exchange_shops('Item Shop', ITEM_SHOP_KINDS, ITEM_SHOP_SKIP)
 
 
 @lru_cache(maxsize=1)
@@ -265,6 +284,16 @@ def catalogue():
         detail(did, title, SHOP_CURRENCY[0], SHOP_CURRENCY[1], 6)
         for iid, label, price in items:
             product(gear_pid[kind, iid], did, str(kind) + ':' + iid + ':1', price, 2147483647,
+                    SHOP_CURRENCY, label=label)
+    # Item Shop tabs last: awakening materials and every other exchange reward, in gil.
+    stock = item_shops()
+    item_pid = {item: ITEM_SHOP_PRODUCT + index for index, item in
+                enumerate(sorted((kind, iid) for _, kind, items in stock for iid, _, _ in items))}
+    for index, (title, kind, items) in enumerate(stock):
+        did = 850005000 + index
+        detail(did, title, SHOP_CURRENCY[0], SHOP_CURRENCY[1], 6)
+        for iid, label, price in items:
+            product(item_pid[kind, iid], did, str(kind) + ':' + iid + ':1', price, 2147483647,
                     SHOP_CURRENCY, label=label)
     return details, products, offers
 
