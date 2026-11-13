@@ -26,7 +26,7 @@ Gradle and Chaquopy download themselves on the first build, so stay online for i
 
    Every path below is relative to this folder.
 
-2. **JDK 11.** Install any JDK 11 (Eclipse Temurin 11 is a common one). A Java runtime bundled with an IDE
+2. **JDK 11 or 17.** Install one (Eclipse Temurin is a common one). 17 also runs newer Android SDK command-line tools, which need it. A Java runtime bundled with an IDE
    isn't enough, because the build needs `javac`. `JAVA_HOME` is the JDK's folder, the one with `bin\javac.exe`.
 
 3. **Python 3.10.** Install Python 3.10 next to any newer Python you have. Chaquopy checks that `python` is
@@ -41,8 +41,13 @@ Gradle and Chaquopy download themselves on the first build, so stay online for i
    (`Sdk\cmdline-tools\<version>\bin`):
 
    ```powershell
-   sdkmanager.bat "platforms;android-33" "build-tools;36.0.0"
+   $env:JAVA_HOME = 'C:\path\to\jdk'
+   $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+   & "$env:ANDROID_HOME\cmdline-tools\latest\bin\sdkmanager.bat" "platforms;android-33" "build-tools;36.0.0"
    ```
+
+   Answer `y` to the licence prompts. You never run anything from the SDK yourself: the build script finds
+   these parts through `ANDROID_HOME`.
 
    `ANDROID_HOME` is the `Sdk` folder, usually `%LOCALAPPDATA%\Android\Sdk`.
 
