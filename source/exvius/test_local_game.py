@@ -1240,7 +1240,8 @@ class LocalGameIntegration(unittest.TestCase):
         self.assertLessEqual(sold, _units_with_icons())
         self.assertNotIn('332000105', sold)
         coin_shops = [r for r in reply['F2rNo6qf'] if r['JV8AIH3n'] == '6']
-        self.assertEqual(len(coin_shops), 4 + len(unit_tabs))
+        gear_tabs = [r for r in reply['F2rNo6qf'] if r['6uvHX2JG'].startswith('Gear Shop')]
+        self.assertEqual(len(coin_shops), 4 + len(unit_tabs) + len(gear_tabs))
         self.assertTrue(all(r['0GgK6ytT'] == '30:1' for r in coin_shops))
         self.assertTrue(all(r['0GgK6ytT'] != '30:1' for r in reply['F2rNo6qf']
                             if r['JV8AIH3n'] in ('4', '5')))
@@ -1324,6 +1325,35 @@ class LocalGameIntegration(unittest.TestCase):
         self.exchange('GachaSelectExchangeExeRequest',
                       {'4mrD6JuA': [{'jPV7Xc4N': '940018000', 'Qy5EvcK1': '2'}]})
         self.assertEqual(player.data, saved)
+
+    def test_gear_shop_sells_exchange_equipment_and_materia_for_gil(self):
+        from exvius_shop_catalogue import catalogue, gear_shops
+        details, products, offers = catalogue()
+        tabs = gear_shops()
+        self.assertEqual({kind for _, kind, _ in tabs}, {21, 22})
+        gear = {(kind, iid): price for _, kind, items in tabs for iid, _, price in items}
+        self.assertGreater(len([k for k in gear if k[0] == 21]), 500)
+        self.assertGreater(len([k for k in gear if k[0] == 22]), 250)
+        gear_details = {r['3X1gLufw'] for r in details if r['6uvHX2JG'].startswith('Gear Shop')}
+        self.assertTrue(all(r['JV8AIH3n'] == '6' and r['0GgK6ytT'] == '30:1'
+                            for r in details if r['3X1gLufw'] in gear_details))
+        rows = [r for r in products if r['3X1gLufw'] in gear_details]
+        self.assertEqual(len(rows), len(gear))
+        self.assertEqual(len({r['jPV7Xc4N'] for r in rows}), len(rows))
+        self.assertTrue(all(int(r['jPV7Xc4N']) < 2**31 and r['uYcL8IQ1'] == '-1' for r in rows))
+        row = next(r for r in rows if r['P4puB2ch'].startswith('21:'))
+        kind, iid, _ = row['P4puB2ch'].split(':')
+        price = gear[int(kind), iid]
+        self.assertEqual(int(row['e4mG8jTc']), price)
+        player = self.game.server.State.player
+        player.currencies['gil'] = price * 2
+        owned = lambda: sum(int(r['Qy5EvcK1']) for r in player.equip_item_rows()
+                            if str(r['J1YX9kmM']) == iid)
+        before = owned()
+        self.exchange('GachaSelectExchangeExeRequest',
+                      {'4mrD6JuA': [{'jPV7Xc4N': row['jPV7Xc4N'], 'Qy5EvcK1': '2'}]})
+        self.assertEqual(player.currencies['gil'], 0)
+        self.assertEqual(owned(), before + 2)
 
     def test_real_stage_other_challenge_rewards_stay_one_time(self):
         player = self.game.server.State.player

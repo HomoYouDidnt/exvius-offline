@@ -46,6 +46,11 @@ UNIT_SHOP_PRODUCT = 1000000000  # + the unit id, so a unit keeps its product id 
 # Every exchange shop priced in lapis is charged in gil instead, at the same number (30 is gil's
 # reward kind; the shop's currency header reads 30 as GIL, NVShopItemListScene_sg::updateCurrencyItem).
 SHOP_CURRENCY = (30, '1')
+# Gear Shop: every equipment (kind 21) and materia (kind 22) piece any merchant exchange sold, one
+# per purchase, for the same number of gil as its cheapest exchange price, no buy limit. Product ids
+# count up from GEAR_SHOP_PRODUCT in item-id order (equipment ids don't fit beside an offset).
+GEAR_SHOP_PRODUCT = 970000000
+GEAR_SHOP_KINDS = ((21, 'ITEM_EQUIP', 'Equipment'), (22, 'MATERIA', 'Materia'))
 
 
 def _units_with_icons():
@@ -103,6 +108,57 @@ def unit_shops():
                 first, last = (u[1][:1].upper() for u in (chunk[0], chunk[-1]))
                 name += ' (' + (first if first.isalpha() else 'A') + '-' + last + ')'
             tabs.append((name, chunk))
+    return tabs
+
+
+def _split_tabs(prefix, items):
+    """Split [(id, label)] sorted by label into tabs of at most UNIT_SHOP_TAB, named by letter range."""
+    items = sorted(items, key=lambda u: (u[1].lower(), int(u[0])))
+    parts = max(1, -(-len(items) // UNIT_SHOP_TAB))
+    size = -(-len(items) // parts) if items else 0
+    tabs = []
+    for start in range(0, len(items), size or 1):
+        chunk = items[start:start + size]
+        name = prefix
+        if parts > 1:
+            first, last = (u[1][:1].upper() for u in (chunk[0], chunk[-1]))
+            name += ' (' + (first if first.isalpha() else 'A') + '-' + last + ')'
+        tabs.append((name, chunk))
+    return tabs
+
+
+def gear_shops():
+    """[(tab title, kind, [(item id, label, gil price)])] for the Gear Shop.
+
+    Every equipment and materia reward in F_MEDAL_EXCHANGE_MST (the merchant exchanges, whose own
+    currencies the game checks on the phone), at its cheapest price per piece in that exchange's
+    currency, charged as the same number of gil. Pieces with no name row are left out."""
+    best = {}
+    for row in _rows('F_MEDAL_EXCHANGE_MST'):
+        try:
+            rewards = parse(row.get('7iJpH5zZ'))
+            price = int(row.get('Qy5EvcK1') or 0)
+        except ValueError:
+            continue
+        if len(rewards) != 1 or price <= 0:
+            continue
+        reward = rewards[0]
+        if reward['kind'] not in (21, 22):
+            continue
+        key = (reward['kind'], str(reward['id']))
+        each = max(1, -(-price // reward['count']))
+        best[key] = min(best.get(key, each), each)
+    tabs = []
+    for kind, table, title in GEAR_SHOP_KINDS:
+        names = {}
+        path = Path(TEXT_DIR) / ('F_TEXT_' + table + '_NAME.ndjson')
+        for line in path.read_text(encoding='utf-8').splitlines():
+            if line.strip():
+                row = json.loads(line)
+                names[row['key'].rsplit('_', 1)[-1]] = row['v'][0].strip()
+        items = [(iid, names[iid]) for (k, iid) in best if k == kind and names.get(iid)]
+        for name, chunk in _split_tabs('Gear Shop: ' + title, items):
+            tabs.append((name, kind, [(iid, label, best[kind, iid]) for iid, label in chunk]))
     return tabs
 
 
@@ -201,6 +257,15 @@ def catalogue():
             product(UNIT_SHOP_PRODUCT + int(uid), did, '10:' + uid + ':1', 1, 2147483647,
                     SHOP_CURRENCY, label=label)
             offers[str(UNIT_SHOP_PRODUCT + int(uid))]['unit_shop'] = True
+    # Gear Shop tabs follow, also in gil with the coin shops.
+    gear = sorted((kind, iid) for _, kind, items in gear_shops() for iid, _, _ in items)
+    gear_pid = {item: GEAR_SHOP_PRODUCT + index for index, item in enumerate(gear)}
+    for index, (title, kind, items) in enumerate(gear_shops()):
+        did = 850004000 + index
+        detail(did, title, SHOP_CURRENCY[0], SHOP_CURRENCY[1], 6)
+        for iid, label, price in items:
+            product(gear_pid[kind, iid], did, str(kind) + ':' + iid + ':1', price, 2147483647,
+                    SHOP_CURRENCY, label=label)
     return details, products, offers
 
 

@@ -32,6 +32,7 @@ A second launcher icon, **Exvius 2.0 Settings**, holds these. They apply without
 - **Gil instead of lapis:** bundles and the coin exchange shops (VIP, EX Coin, Daily Coin and the Unit Shop) cost gil, at the same number they used to cost in lapis.
 - **Super Trust Moogle exchange:** spend Super Trust Moogle Exchange Tickets on a 100% STMR moogle.
 - **Moogle Shop:** 100% Trust Moogles and 100% Super Trust Moogles for 300 gil each, no buy limit, with the other coin shops.
+- **Gear Shop:** every weapon, armor, accessory and materia the merchant exchanges sold (679 equipment, 344 materia), for the same number of gil as its cheapest exchange price, no buy limit. The merchants themselves still take their own currencies, because the game checks those prices on the phone.
 - **Dead currencies:** the United Forces, Kingdom Hearts and premium coin exchanges are open again, using the game's own shop tables. Kingdom Hearts banners take their coins on 11-summons.
 
 ### Gameplay
