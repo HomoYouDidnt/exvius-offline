@@ -137,6 +137,101 @@ export function clampMapScroll(x, y, columns, rows, width, height) {
   };
 }
 
+// Native per-player frame counter for the darkness check. Each player gets up
+// to nine calls to check(player); check returns true once it is finished with
+// that player (darkness found, or an error). Every later frame stays in C.
+// Returns null where the runtime can't compile C; callers keep the JS hook then.
+export const FRAME_GATE_SOURCE = `
+#include <gum/guminterceptor.h>
+
+extern int check (void * player);
+
+#define CAP 4096
+#define MASK (CAP - 1)
+static void * keys[CAP];
+static signed char counts[CAP];
+static unsigned int used;
+
+static unsigned int slot_of (void * key)
+{
+  unsigned long long h = (unsigned long long) key;
+  h ^= h >> 33;
+  h *= 0xff51afd7ed558ccdULL;
+  h ^= h >> 33;
+  return (unsigned int) h & MASK;
+}
+
+void onFrame (GumInvocationContext * ic)
+{
+  void * player = gum_invocation_context_get_nth_argument (ic, 0);
+  unsigned int i = slot_of (player);
+  while (keys[i] != player)
+  {
+    if (keys[i] == 0)
+    {
+      if (used >= CAP / 4 * 3)
+      {
+        /* Players freed without a destructor call: start over. */
+        unsigned int j;
+        for (j = 0; j < CAP; j++) keys[j] = 0;
+        used = 0;
+        i = slot_of (player);
+      }
+      keys[i] = player;
+      counts[i] = 0;
+      used++;
+      break;
+    }
+    i = (i + 1) & MASK;
+  }
+  if (counts[i] < 0 || counts[i] > 8)
+    return;
+  counts[i]++;
+  if (check (player))
+    counts[i] = -1;
+}
+
+void onDestroy (GumInvocationContext * ic)
+{
+  void * player = gum_invocation_context_get_nth_argument (ic, 0);
+  unsigned int i = slot_of (player), j, k;
+  while (keys[i] != player)
+  {
+    if (keys[i] == 0)
+      return;
+    i = (i + 1) & MASK;
+  }
+  j = i;
+  for (;;)
+  {
+    j = (j + 1) & MASK;
+    if (keys[j] == 0)
+      break;
+    k = slot_of (keys[j]);
+    if (i <= j ? (i < k && k <= j) : (i < k || k <= j))
+      continue;
+    keys[i] = keys[j];
+    counts[i] = counts[j];
+    i = j;
+  }
+  keys[i] = 0;
+  used--;
+}
+`;
+
+function nativeFrameGate(check, note) {
+  if (typeof CModule === 'undefined') return null;
+  try {
+    const callback = new NativeCallback(player => check(player) ? 1 : 0, 'int', ['pointer']);
+    const module = new CModule(FRAME_GATE_SOURCE, {check: callback});
+    note('FRAME_GATE native');
+    return {module, callback};
+  } catch (error) {
+    note('FRAME_GATE_FALLBACK ' + error);
+    return null;
+  }
+}
+
 export function installAdaptiveDisplay(module, retained, note, bridge) {
   const native = (name, result, args) => new NativeFunction(module.getExportByName(name), result, args, {exceptions: 'propagate'});
   // GL9 getMaxFrame returns the frame count. Its chest idle code passes that
@@ -562,29 +657,43 @@ export function installAdaptiveDisplay(module, retained, note, bridge) {
     }
     return false;
   }
-  retained.push(Interceptor.attach(module.getExportByName('_ZN2ss6Player8setFrameEi'), {
-    onEnter(args) {
-      const player = args[0], key = player.toString();
-      const checks = darknessChecks.get(key) || 0;
-      // The animation sets its sprite's scale on its first frames; stop looking after that.
-      if (checks < 0 || checks > 8) return;
-      darknessChecks.set(key, checks + 1);
-      try {
-        if (!hasDarknessSprite(player)) return;
-        // Hide the player node, not its sprite: the animation rewrites part visibility every frame.
-        setVisible(player, 0);
-        darknessChecks.set(key, -1);
-        note('MAP_DARKNESS_REMOVED');
-      } catch (error) {
-        darknessChecks.set(key, -1);
-        note('MAP_DARKNESS_ERROR ' + error);
-      }
+  function checkDarkness(player) {
+    try {
+      if (!hasDarknessSprite(player)) return false;
+      // Hide the player node, not its sprite: the animation rewrites part visibility every frame.
+      setVisible(player, 0);
+      note('MAP_DARKNESS_REMOVED');
+    } catch (error) {
+      note('MAP_DARKNESS_ERROR ' + error);
     }
-  }));
-  for (const name of ['_ZN2ss6PlayerD1Ev', '_ZN2ss6PlayerD2Ev'])
-    retained.push(Interceptor.attach(module.getExportByName(name), {
-      onEnter(args) { darknessChecks.delete(args[0].toString()); }
+    return true;
+  }
+  // ss::Player::setFrame runs for every SpriteStudio animation on every frame,
+  // battles included. Only a player's first nine frames need the check (the
+  // animation sets its sprite's scale on its first frames), so a native gate
+  // counts frames per player and calls into JavaScript only for those.
+  const gate = nativeFrameGate(checkDarkness, note);
+  if (gate) {
+    retained.push(gate);
+    retained.push(Interceptor.attach(module.getExportByName('_ZN2ss6Player8setFrameEi'),
+      {onEnter: gate.module.onFrame}));
+    for (const name of ['_ZN2ss6PlayerD1Ev', '_ZN2ss6PlayerD2Ev'])
+      retained.push(Interceptor.attach(module.getExportByName(name), {onEnter: gate.module.onDestroy}));
+  } else {
+    retained.push(Interceptor.attach(module.getExportByName('_ZN2ss6Player8setFrameEi'), {
+      onEnter(args) {
+        const player = args[0], key = player.toString();
+        const checks = darknessChecks.get(key) || 0;
+        if (checks < 0 || checks > 8) return;
+        darknessChecks.set(key, checks + 1);
+        if (checkDarkness(player)) darknessChecks.set(key, -1);
+      }
     }));
+    for (const name of ['_ZN2ss6PlayerD1Ev', '_ZN2ss6PlayerD2Ev'])
+      retained.push(Interceptor.attach(module.getExportByName(name), {
+        onEnter(args) { darknessChecks.delete(args[0].toString()); }
+      }));
+  }
   // MapDrawManager already uses nearest-neighbour sampling for its pixel-art
   // tiles. AreaMapManager omitted it for the separate World/region sheets,
   // allowing linear sampling across sheet edges at fractional phone scales.

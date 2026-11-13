@@ -6,6 +6,162 @@ export function fitSummonArt(sourceWidth, sourceHeight, width, height) {
   return {width: sourceWidth * scale, height: sourceHeight * scale};
 }
 
+// GachaDetailScrlObj::updatePosition runs for every banner in the carousel on
+// every frame while it scrolls, and a large summon group holds hundreds. The
+// centring below is done in C so those calls never enter JavaScript.
+export const ART_CENTER_SOURCE = `
+#include <gum/guminterceptor.h>
+
+extern void * getBanner (void * object);
+extern const float * anchor (void * node);
+extern float getX (void * node);
+extern float getY (void * node);
+extern void setX (void * node, float x);
+extern void setY (void * node, float y);
+
+typedef struct { float dx, dy, x, y; int adjusted; } Box;
+typedef struct { void * object; } Call;
+
+#define CAP 4096
+#define MASK (CAP - 1)
+static void * keys[CAP];
+static Box boxes[CAP];
+static unsigned int used;
+
+static unsigned int slot_of (void * key)
+{
+  unsigned long long h = (unsigned long long) key;
+  h ^= h >> 33;
+  h *= 0xff51afd7ed558ccdULL;
+  h ^= h >> 33;
+  return (unsigned int) h & MASK;
+}
+
+static int find (void * object)
+{
+  unsigned int i = slot_of (object);
+  while (keys[i] != 0)
+  {
+    if (keys[i] == object)
+      return (int) i;
+    i = (i + 1) & MASK;
+  }
+  return -1;
+}
+
+void art_remove (void * object)
+{
+  int found = find (object);
+  unsigned int i, j, k;
+  if (found < 0)
+    return;
+  i = (unsigned int) found;
+  j = i;
+  for (;;)
+  {
+    j = (j + 1) & MASK;
+    if (keys[j] == 0)
+      break;
+    k = slot_of (keys[j]);
+    if (i <= j ? (i < k && k <= j) : (i < k || k <= j))
+      continue;
+    keys[i] = keys[j];
+    boxes[i] = boxes[j];
+    i = j;
+  }
+  keys[i] = 0;
+  used--;
+}
+
+void art_set (void * object, float dx, float dy)
+{
+  int found = find (object);
+  unsigned int i;
+  if (found < 0)
+  {
+    if (used >= CAP / 4 * 3)
+      return;
+    i = slot_of (object);
+    while (keys[i] != 0)
+      i = (i + 1) & MASK;
+    keys[i] = object;
+    used++;
+  }
+  else
+    i = (unsigned int) found;
+  boxes[i].dx = dx;
+  boxes[i].dy = dy;
+  boxes[i].adjusted = 0;
+}
+
+void art_center (void * object)
+{
+  int found = find (object);
+  Box * box;
+  void * node;
+  const float * point;
+  float x, y, ex, ey;
+  if (found < 0)
+    return;
+  box = &boxes[found];
+  node = getBanner (object);
+  if (node == 0)
+    return;
+  x = getX (node);
+  y = getY (node);
+  ex = x - box->x;
+  ey = y - box->y;
+  if (box->adjusted && ex < 0.01f && ex > -0.01f && ey < 0.01f && ey > -0.01f)
+    return;
+  point = anchor (node);
+  box->x = x + (0.5f - point[0]) * box->dx;
+  box->y = y + (0.5f - point[1]) * box->dy;
+  box->adjusted = 1;
+  setX (node, box->x);
+  setY (node, box->y);
+}
+
+void onEnter (GumInvocationContext * ic)
+{
+  GUM_IC_GET_INVOCATION_DATA (ic, Call)->object = gum_invocation_context_get_nth_argument (ic, 0);
+}
+
+void onLeave (GumInvocationContext * ic)
+{
+  art_center (GUM_IC_GET_INVOCATION_DATA (ic, Call)->object);
+}
+
+void onDestroy (GumInvocationContext * ic)
+{
+  art_remove (gum_invocation_context_get_nth_argument (ic, 0));
+}
+`;
+
+function nativeArtCenter(module, note) {
+  if (typeof CModule === 'undefined') return null;
+  try {
+    const exported = name => module.getExportByName(name);
+    const code = new CModule(ART_CENTER_SOURCE, {
+      getBanner: exported('_ZNK18GachaDetailScrlObj9getBannerEv'),
+      anchor: exported('_ZNK7cocos2d4Node14getAnchorPointEv'),
+      getX: exported('_ZNK7cocos2d4Node12getPositionXEv'),
+      getY: exported('_ZNK7cocos2d4Node12getPositionYEv'),
+      setX: exported('_ZN7cocos2d4Node12setPositionXEf'),
+      setY: exported('_ZN7cocos2d4Node12setPositionYEf')
+    });
+    note('SUMMON_ART_CENTER native');
+    return {
+      code,
+      set: new NativeFunction(code.art_set, 'void', ['pointer', 'float', 'float']),
+      remove: new NativeFunction(code.art_remove, 'void', ['pointer']),
+      center: new NativeFunction(code.art_center, 'void', ['pointer'])
+    };
+  } catch (error) {
+    note('SUMMON_ART_CENTER_FALLBACK ' + error);
+    return null;
+  }
+}
+
 // GL9's image carousel stretches every source to its layout rectangle. Use
 // the original wide variant where available, then fit the complete image
 // proportionally. Both source artwork and native carousel controls stay intact.
@@ -57,21 +213,32 @@ export function installSummonArt(module, note, retained, bridge) {
     setX(node, box.adjusted.x);
     setY(node, box.adjusted.y);
   }
+  const art = nativeArtCenter(module, note);
+  if (art) retained.push(art);
+  const forget = art ? object => art.remove(object) : object => offsets.delete(object.toString());
+  const place = art ? object => art.center(object) : center;
   retained.push(Interceptor.attach(module.getExportByName('_ZN18GachaDetailScrlObj9addObjectEiff'), {
     onEnter(args) {
       this.previous = currentObject;
       this.object = currentObject = args[0];
-      offsets.delete(this.object.toString());
+      forget(this.object);
     },
-    onLeave() { center(this.object); currentObject = this.previous; }
+    onLeave() { place(this.object); currentObject = this.previous; }
   }));
-  retained.push(Interceptor.attach(module.getExportByName('_ZN18GachaDetailScrlObj14updatePositionEff'), {
-    onEnter(args) { this.object = args[0]; },
-    onLeave() { center(this.object); }
-  }));
-  retained.push(Interceptor.attach(module.getExportByName('_ZN18GachaDetailScrlObjD1Ev'), {
-    onEnter(args) { offsets.delete(args[0].toString()); }
-  }));
+  if (art) {
+    retained.push(Interceptor.attach(module.getExportByName('_ZN18GachaDetailScrlObj14updatePositionEff'),
+      {onEnter: art.code.onEnter, onLeave: art.code.onLeave}));
+    retained.push(Interceptor.attach(module.getExportByName('_ZN18GachaDetailScrlObjD1Ev'),
+      {onEnter: art.code.onDestroy}));
+  } else {
+    retained.push(Interceptor.attach(module.getExportByName('_ZN18GachaDetailScrlObj14updatePositionEff'), {
+      onEnter(args) { this.object = args[0]; },
+      onLeave() { center(this.object); }
+    }));
+    retained.push(Interceptor.attach(module.getExportByName('_ZN18GachaDetailScrlObjD1Ev'), {
+      onEnter(args) { offsets.delete(args[0].toString()); }
+    }));
+  }
   retained.push(Interceptor.attach(module.getExportByName(
     '_ZN21GachaBannerDownloader12createBannerERKNSt6__ndk112basic_stringIcNS0_11char_traitsIcEENS0_9allocatorIcEEEERKN7cocos2d4SizeE'), {
     onEnter(args) {
@@ -102,7 +269,10 @@ export function installSummonArt(module, note, retained, bridge) {
       this.size = Memory.alloc(8);
       this.size.writeFloat(fitted.width); this.size.add(4).writeFloat(fitted.height);
       args[1] = this.size;
-      if (currentObject) offsets.set(currentObject.toString(), {dx: width - fitted.width, dy: height - fitted.height});
+      if (currentObject) {
+        if (art) art.set(currentObject, width - fitted.width, height - fitted.height);
+        else offsets.set(currentObject.toString(), {dx: width - fitted.width, dy: height - fitted.height});
+      }
       if (reports++ < 16) note('SUMMON_ART_FIT file=' + name + ' source=' + size.join('x') +
         ' display=' + fitted.width.toFixed(1) + 'x' + fitted.height.toFixed(1));
     },

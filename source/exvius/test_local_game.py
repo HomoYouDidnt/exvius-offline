@@ -823,6 +823,23 @@ class LocalGameIntegration(unittest.TestCase):
         self.assertEqual(wire_type({'id': '1', 'type': 'normal', 'ticket_group_id': 5}, 1), 0)
         self.assertEqual(wire_type({'id': '2', 'type': 'normal', 'cost': {'kind': 'lapis'}}, 1), 1)
 
+    def test_archive_splits_big_seasons_between_release_years(self):
+        from gacha_archive import catalogue, SPLIT_AT
+        count = SPLIT_AT + 20
+        fixtures = [{'id': str(9910000 + i), 'name': 'Test', 'tab': 'limited',
+                     'art': {'banner': 'split-%d.png' % i},
+                     'community': {'release': '%d-03-%d' % (2018 if i < count // 2 else 2019, 1 + i % 28)}}
+                    for i in range(count)]
+        groups = {group['id']: group for group in catalogue(fixtures)}
+        self.assertEqual((groups['season2']['label'], groups['season2']['count']), ('S2 2018', count // 2))
+        self.assertEqual((groups['season2-2']['label'], groups['season2-2']['count']), ('S2 2019', count - count // 2))
+        listed = [bid for key in ('season2', 'season2-2') for bid in groups[key]['ids']]
+        self.assertEqual(sorted(listed), sorted(fixture['id'] for fixture in fixtures))
+        # A season at the limit stays one group.
+        groups = {group['id']: group for group in catalogue(fixtures[:SPLIT_AT])}
+        self.assertNotIn('season2-2', groups)
+        self.assertEqual(groups['season2']['label'], 'Season 2')
+
     def test_archive_groups_collaboration_series_in_native_schedule_order(self):
         from gacha_archive import visible_banners
         fixtures = [
@@ -1020,7 +1037,7 @@ class LocalGameIntegration(unittest.TestCase):
     def test_named_step_up_keeps_native_type_and_refreshes_next_step(self):
         from ffbe_gacha import all_banners
         player = self.game.server.State.player
-        player.data['summon_archive'] = 'season4'
+        player.data['summon_archive'] = 'season4-2'   # Season 4 is split; this 2024 banner is in its second part
         player.currencies['lapis_free'] = 10000
         entry = self.exchange('GachaEntryRequest', {})
         from ffbe_config import GACHA_MST_TAG, GACHA_DETAIL_TAG, GACHA_SCHEDULE_TAG

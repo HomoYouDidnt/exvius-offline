@@ -16,6 +16,11 @@ COLLABORATIONS = (
 )
 GROUPS = (('standard', 'Standard'), ('season1', 'Season 1'), ('season2', 'Season 2'),
           ('season3', 'Season 3'), ('season4', 'Season 4'), ('collaborations', 'Collab'))
+# A season with more banners than this is shown as several groups, each a run of whole release years.
+# The client builds a sprite and a scroll row for every banner in the chosen group, so a big season made
+# the summon list slow to open and to scroll. The first part keeps the season's id, so a saved choice
+# still opens it.
+SPLIT_AT = 80
 # Always-available summons, shown with every group (as on the live game).
 PERMANENT_NAMES = {
     'Standard Summon', 'Rare Summon', 'Premium 10+1 Summon', '5★ Guaranteed 10+1 Summon',
@@ -160,14 +165,49 @@ def _catalogue(banners):
     from ffbe_gacha import gacha_type_code
     groups = []
     for key, label in GROUPS:
-        ordered = [bid for _, _, bid in sorted(members[key], key=lambda row: (row[0], row[1]))]
-        ids = shared + ordered
-        # Open the group on its own lineup: Limited Time when it has limited banners.
-        limited = any(by_id[bid].get('tab') == 'limited' or
-                      gacha_type_code(by_id[bid]) in LIMITED_CODES for bid in ids)
-        tab = 2 if limited and key != 'standard' else 0
-        groups.append({'id': key, 'label': label, 'ids': ids, 'count': len(ordered), 'tab': tab})
+        rows = sorted(members[key], key=lambda row: (row[0], row[1]))
+        for part_id, part_label, part in _season_parts(key, label, rows):
+            ordered = [bid for _, _, bid in part]
+            ids = shared + ordered
+            # Open the group on its own lineup: Limited Time when it has limited banners.
+            limited = any(by_id[bid].get('tab') == 'limited' or
+                          gacha_type_code(by_id[bid]) in LIMITED_CODES for bid in ids)
+            tab = 2 if limited and key != 'standard' else 0
+            groups.append({'id': part_id, 'label': part_label, 'ids': ids, 'count': len(ordered), 'tab': tab})
     return groups
+
+
+def _season_parts(key, label, rows):
+    """(id, label, rows) for each group a season is shown as. Rows are (series, released, id), in release
+    order. Seasons over SPLIT_AT banners split between release years, never inside one year: "S2 2017-18"
+    as `season2`, then "S2 2019-20" as `season2-2`. Standard and collaborations stay whole."""
+    if not key.startswith('season') or len(rows) <= SPLIT_AT:
+        return [(key, label, rows)]
+    years = []
+    for row in rows:
+        year = row[1].year
+        if years and years[-1][0] == year:
+            years[-1][1].append(row)
+        else:
+            years.append((year, [row]))
+    runs = []
+    for year, chunk in years:
+        if runs and len(runs[-1][2]) + len(chunk) <= SPLIT_AT:
+            runs[-1][1] = year
+            runs[-1][2].extend(chunk)
+        else:
+            runs.append([year, year, list(chunk)])
+    if len(runs) == 1:
+        return [(key, label, rows)]
+    short = 'S' + key[len('season'):]
+    parts = []
+    for index, (first, last, chunk) in enumerate(runs):
+        dated = [row[1].year for row in chunk if row[1] != date.min]
+        first, last = (min(dated), max(dated)) if dated else (None, None)
+        span = ('undated' if first is None else str(first) if first == last
+                else '%d-%02d' % (first, last % 100))
+        parts.append((key if index == 0 else '%s-%d' % (key, index + 1), short + ' ' + span, chunk))
+    return parts
 
 
 def selected_group(player, groups):
