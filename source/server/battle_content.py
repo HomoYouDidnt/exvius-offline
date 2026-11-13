@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import threading
 import unicodedata
 
@@ -566,27 +567,177 @@ def derive_mission(mission: int, source: Source | str, break_status: dict[str, d
 
 
 _FIELD_GROUP_BINDINGS = None
+_FIELD_SCENARIO_GROUPS = None
+
+# Random battles in explorations. The map rolls an encounter with its own tables
+# (F_ENCOUNT_FIELD_MST rates, per-tile zones), then `MapManager::checkEncountFiled`
+# (0x1fb43d4) asks `EncountInfoList::drawing(zone)` for a battle group and
+# `EncountInfoList::checkEnable(zone, group, n)` whether the n-th fight with that
+# group in that zone may start. Both read EncountInfo rows that the original
+# server sent with the mission (tag 6v0LPiRe, `EncountInfoResponse::readParam`
+# 0x1977dac). This server never sent any, so every roll found nothing and the
+# maps had no random battles at all (issues #28, #92).
+#
+# Row fields (EncountInfo offsets): qo3PECw6 mission (+0x24), YzGa63QM zone
+# (+0xfc), 2fY1IomW battle group (+0x28), h4Sjf96p encounter number (+0x100,
+# 0 for the first fight with that group in that zone; the client keeps the count
+# per mission), xqartN26/Z0EN6jSh/6Yc4RkdM as in the wave rows, 9BetM2Ds the
+# fight's drops (4 fields per item, like the wave rows), 14FMQseU 0 = escape
+# allowed. `drawing` picks uniformly among the zone's distinct groups.
+ENCOUNT_INFO_TAG = "6v0LPiRe"
+# Every field map we sampled carries the same zone palette in its map.bin header
+# (0 = no encounters, then these). Which tiles use which zone, and which groups
+# the original server assigned to each zone, is not in the data we have, so each
+# zone gets the mission's whole encounter pool.
+FIELD_ENCOUNT_ZONES = ("10", "11", "12", "13", "14", "20", "21", "22", "30", "31", "32", "40", "50")
+# Fights available per zone before that zone runs dry for the run (spread over
+# the pool), and a pool smaller than this is topped up from the area's own
+# story battles.
+FIELD_FIGHTS_PER_ZONE = 30
+FIELD_MIN_POOL = 6
+FIELD_FALLBACK_DROPS = "20:290050100:1:30"
+
+
+def _field_tables():
+    global _FIELD_GROUP_BINDINGS, _FIELD_SCENARIO_GROUPS
+    if _FIELD_GROUP_BINDINGS is None:
+        path = os.path.join(HERE, 'content', 'field_group_bindings.json')
+        with open(path, encoding='utf8') as stream:
+            doc = json.load(stream)
+        _FIELD_GROUP_BINDINGS = doc['missions']
+        _FIELD_SCENARIO_GROUPS = {str(link['group']) for links in doc.get('scenario_links', {}).values()
+                                  for link in links}
+    return _FIELD_GROUP_BINDINGS, _FIELD_SCENARIO_GROUPS
+
+
+def _area_story_groups(source, mid: str, dungeon: str) -> set[str]:
+    """Battle groups of the other missions in the same dungeon, through their phase lotteries."""
+    if not dungeon:
+        return set()
+    missions = {str(row['qo3PECw6']) for row in source.load('F_MISSION_MST')
+                if str(row.get('U9iHsau3')) == dungeon and str(row['qo3PECw6']) != mid}
+    pools = {str(row['6uIYE15X']) for row in source.load('F_MISSION_PHASE_MST')
+             if str(row.get('qo3PECw6')) in missions and str(row.get('gou39JeI')) == '2'}
+    groups = {str(row['2fY1IomW']) for row in source.load('F_BATTLE_LOTTERY_MST')
+              if str(row.get('c2gnh6Jd')) in pools and int(row.get('ixDq7yJ8') or 0) > 0}
+    # A story group with a single enemy is almost always that mission's boss.
+    sizes: dict[str, int] = {}
+    for row in source.load('F_BATTLE_GROUP_MST'):
+        group = str(row['2fY1IomW'])
+        if group in groups:
+            sizes[group] = sizes.get(group, 0) + 1
+    return {group for group in groups if sizes.get(group, 0) > 1}
+
+
+def field_encounter_pool(source, mission: dict, map_groups: set[str]) -> list[str]:
+    """The battle groups an exploration's random battles draw from."""
+    mid = str(mission['qo3PECw6'])
+    _, scenario = _field_tables()
+    lottery_groups = {str(row['2fY1IomW']) for row in source.load('F_BATTLE_LOTTERY_MST')}
+    # The exploration's own groups (mission id + two digits) that no story phase uses.
+    pool = {g for g in map_groups if g.startswith(mid) and g not in lottery_groups}
+    # Groups the map files reference for this area (story bosses excluded).
+    pool |= {g for g in map_groups if not g.startswith(mid) and g[:5] == mid[:5]}
+    pool -= scenario
+    if len(pool) < FIELD_MIN_POOL:
+        pool |= _area_story_groups(source, mid, str(mission.get('U9iHsau3') or '')) - scenario
+    return sorted(pool)
+
+
+def _roll_encounter_drops(candidates: list[str]) -> str:
+    items = [item for item in candidates if item] or [FIELD_FALLBACK_DROPS]
+    rolled = []
+    for item in items:
+        fields = item.split(':')
+        rate = int(fields[3]) if len(fields) > 3 and fields[3].isdigit() else 100
+        if random.randint(1, 100) <= rate:
+            rolled.append(item)
+    # Never empty: an empty list still reaches the 4-field drop parser.
+    return ','.join(rolled or [items[-1]])
+
+
+def encount_info_rows(mid: str, pool: list[str], bundle: dict) -> list[dict]:
+    """One EncountInfo row per zone, group and encounter number, with that fight's drops rolled."""
+    slots: dict[str, list[dict]] = {}
+    for row in bundle.get('Bi6hVv34', []):
+        slots.setdefault(str(row['2fY1IomW']), []).append(row)
+    drops: dict[str, list[str]] = {}
+    for row in bundle.get('bV34YIJQ', []):
+        bucket = drops.setdefault(str(row.get('xqartN26')), [])
+        for item in str(row.get('9BetM2Ds') or '').split(','):
+            if item and item not in bucket:
+                bucket.append(item)
+    groups = [g for g in pool if slots.get(g)]
+    if not groups:
+        return []
+    monsters = {g: {str(s['xqartN26']) for s in slots[g]} for g in groups}
+    per_group = max(2, -(-FIELD_FIGHTS_PER_ZONE // len(groups)))
+    rows = []
+    for zone in FIELD_ENCOUNT_ZONES:
+        for group in groups:
+            ordered = sorted(slots[group], key=lambda s: int(s['Z0EN6jSh']))
+            # A lone monster seen in no other group (a Golden Bomb, say) stays rare: one fight per zone.
+            rare = (len(groups) >= 4 and len(monsters[group]) == 1
+                    and not any(monsters[group] & monsters[other] for other in groups if other != group))
+            candidates = []
+            for slot in ordered:
+                for item in drops.get(str(slot['xqartN26']), []):
+                    if item not in candidates:
+                        candidates.append(item)
+            for number in range(1 if rare else per_group):
+                rows.append({
+                    'qo3PECw6': mid, 'YzGa63QM': zone, '2fY1IomW': group, 'h4Sjf96p': str(number),
+                    'Z0EN6jSh': '1', 'xqartN26': str(ordered[0]['xqartN26']), '6Yc4RkdM': '1',
+                    '9BetM2Ds': _roll_encounter_drops(candidates), 'MZn8LC6H': '', 'g4voc2Aw': '',
+                    'Vf5DGw07': '', '14FMQseU': '0',
+                })
+    return rows
+
+
+def _derivable(mid: str, source, group: str) -> bool:
+    try:
+        derive_mission(int(mid), source, field_groups={group})
+        return True
+    except SystemExit:
+        return False
 
 
 def field_mission_bundle(carrier: dict, mission: dict) -> dict:
-    """Serve original field groups and their entire monster/skill dependency chain."""
+    """Serve original field groups, their entire monster/skill dependency chain, and the random battles."""
     mid = str(mission['qo3PECw6'])
     source = _default_index_source()
     group_ids = {str(row['2fY1IomW']) for row in source.load('F_BATTLE_GROUP_MST')
                  if str(row['2fY1IomW']).startswith(mid)
                  and len(str(row['2fY1IomW'])) == len(mid) + 2}
-    global _FIELD_GROUP_BINDINGS
-    if _FIELD_GROUP_BINDINGS is None:
-        path = os.path.join(HERE, 'content', 'field_group_bindings.json')
-        with open(path, encoding='utf8') as stream:
-            _FIELD_GROUP_BINDINGS = json.load(stream)['missions']
-    group_ids.update(_FIELD_GROUP_BINDINGS.get(mid, []))
+    bindings, _ = _field_tables()
+    group_ids.update(bindings.get(mid, []))
     out = story_mission_bundle(carrier, mission)
     if group_ids:
         bundle = derive_mission(int(mid), source, field_groups=group_ids)
         bundle.pop('an6TB4WS', None)
         bundle.pop('y35YvQjZ', None)
         out.update(bundle)
+    try:
+        pool = field_encounter_pool(source, mission, group_ids)
+        extra = {g for g in pool if g not in group_ids}
+        if extra:
+            try:
+                bundle = derive_mission(int(mid), source, field_groups=group_ids | extra)
+            except SystemExit:
+                # Some group's enemies are incomplete in the index: keep only the ones that load.
+                extra = {g for g in extra if _derivable(mid, source, g)}
+                bundle = derive_mission(int(mid), source, field_groups=group_ids | extra) if extra else {}
+            pool = [g for g in pool if g in group_ids or g in extra]
+            if bundle:
+                bundle.pop('an6TB4WS', None)
+                bundle.pop('y35YvQjZ', None)
+                out.update(bundle)
+        rows = encount_info_rows(mid, pool, out)
+    except (SystemExit, Exception) as exc:  # noqa: BLE001 - a bad pool must not stop the map from loading
+        print(f"field encounters: mission {mid}: {exc!r}; serving the map without random battles", flush=True)
+        rows = []
+    if rows:
+        out[ENCOUNT_INFO_TAG] = rows
     return out
 
 
