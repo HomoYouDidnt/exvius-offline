@@ -28,6 +28,29 @@ export function carouselHit(cards, point) {
     .sort((a, b) => b.order - a.order || cards.indexOf(b) - cards.indexOf(a))[0];
 }
 
+// The present inbox (envelope) button keeps its retail place on Home, but
+// the restored carousel band and its frame rules draw over that place and
+// claim its touches (upstream issue #58). Rects are top-left boxes in view
+// coordinates (y down); avoid holds centre boxes like card.box. Returns the
+// new top-left, or null when the button is already clear of the band.
+export function mailPlacement(rect, bandTop, bandBottom, avoid = [], margin = 8) {
+  if (!rect || !(rect.w > 0 && rect.h > 0)) return null;
+  if (rect.y >= bandBottom || rect.y + rect.h <= bandTop) return null;
+  let y = bandTop - margin - rect.h;
+  for (const box of avoid) {
+    if (!box) continue;
+    const left = box.x - box.w / 2, right = box.x + box.w / 2;
+    const top = box.y - box.h / 2, bottom = box.y + box.h / 2;
+    if (rect.x < right && rect.x + rect.w > left && y < bottom && y + rect.h > top)
+      y = Math.min(y, top - margin - rect.h);
+  }
+  return {x: rect.x, y: Math.max(margin, Math.round(y))};
+}
+
+export function inRect(rect, p) {
+  return !!rect && p.x >= rect.x && p.x <= rect.x + rect.w && p.y >= rect.y && p.y <= rect.y + rect.h;
+}
+
 export function installHomeCarousel(module, note, retained) {
   const native = (name, result, args) => new NativeFunction(module.getExportByName(name), result, args,
     {exceptions: 'propagate'});
@@ -58,6 +81,15 @@ export function installHomeCarousel(module, note, retained) {
   const cast = new NativeFunction(module.getExportByName('__dynamic_cast'), 'pointer',
     ['pointer', 'pointer', 'pointer', 'long'], {exceptions: 'propagate'});
   const nodeType = module.getExportByName('_ZTIN7cocos2d4NodeE');
+  // HomeScene +0x6e0 owns the present inbox SpriteButton (touch tag 3,
+  // scene 900 MailTopScene). Its x/y at +0x2f8/+0x2fc are the top-left in
+  // view coordinates; updatePosition(x, y) also refreshes its touch rect.
+  const buttonType = module.getExportByName('_ZTI12SpriteButton');
+  const buttonX = native('_ZN12SpriteButton10getButtonXEv', 'float', ['pointer']);
+  const buttonY = native('_ZN12SpriteButton10getButtonYEv', 'float', ['pointer']);
+  const buttonWidth = native('_ZN12SpriteButton14getButtonWidthEv', 'int', ['pointer']);
+  const buttonHeight = native('_ZN12SpriteButton15getButtonHeightEv', 'int', ['pointer']);
+  const buttonMove = native('_ZN12SpriteButton14updatePositionEff', 'void', ['pointer', 'float', 'float']);
   const spriteType = module.getExportByName('_ZTIN7cocos2d6SpriteE');
   const gameType = module.getExportByName('_ZTI10GameSprite');
   const types = new Map();
@@ -530,6 +562,32 @@ export function installHomeCarousel(module, note, retained) {
       orbPosition(equipmentOrbs, equipmentX + 14, equipmentY - 24);
       orbVisible(equipmentOrbs, 1);
     }
+    try { placeMail(ui); }
+    catch (error) { ui.mail = null; note('HOME_MAIL_ERROR ' + error); }
+  }
+  function placeMail(ui) {
+    const button = ui.scene.add(0x6e0).readPointer();
+    const once = text => { if (!ui.mailNoted) note(text); ui.mailNoted = true; };
+    ui.mail = null;
+    if (button.isNull()) { once('HOME_MAIL_MISSING'); return; }
+    // Exact retail type only: the vtable's typeinfo slot sits just before it.
+    if (!button.readPointer().sub(Process.pointerSize).readPointer().equals(buttonType)) {
+      once('HOME_MAIL_UNEXPECTED'); return;
+    }
+    if (button.add(0x360).readPointer().isNull()) { once('HOME_MAIL_NO_SPRITE'); return; }
+    const rect = {x: buttonX(button), y: buttonY(button), w: buttonWidth(button), h: buttonHeight(button)};
+    const bandTop = ui.top - 24 - ui.topRule.h / 2;
+    const bandBottom = ui.bottomEdge + 24 + ui.bottomRule.h / 2;
+    const target = mailPlacement(rect, bandTop, bandBottom, [ui.cards[6].box]);
+    if (target) {
+      buttonMove(button, target.x, target.y);
+      note('HOME_MAIL_MOVED from=' + JSON.stringify(rect) + ' to=' + JSON.stringify(target) +
+        ' band=' + bandTop + '-' + bandBottom);
+      rect.x = target.x; rect.y = target.y;
+      ui.mailNoted = true;
+    }
+    else once('HOME_MAIL_CLEAR rect=' + JSON.stringify(rect) + ' band=' + bandTop + '-' + bandBottom);
+    ui.mail = rect;
   }
   // Movement updates only the carousel. Ownership, feature gates and
   // unrelated Home artwork refresh in draw(), outside Android MOVE bursts.
@@ -714,6 +772,8 @@ export function installHomeCarousel(module, note, retained) {
     begin(scene, touch) {
       const ui = scenes.get(scene.toString()), p = point(touch);
       if (!ui || !touchEnabled(scene) || !routeAllowed(scene)) return false;
+      // The inbox button belongs to the retail Home touch handler.
+      if (inRect(ui.mail, p)) return false;
       const direct = ui.cards.slice(6).find(c => hit(c.box, p));
       if (!direct && (p.y < ui.top || p.y > ui.bottomEdge)) return false;
       // All-at-once CANCEL may bypass the single-touch callback. Every
