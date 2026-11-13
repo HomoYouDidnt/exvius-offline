@@ -12,6 +12,80 @@ What's different from the published build:
   to this build.
 - It keeps its own save. Nothing is shared with the published app unless you copy the save across (below).
 
+## First-time setup (Windows)
+
+Do this once. Everything goes in your copy of the fork, except the JDK, Python and your signing key.
+Gradle and Chaquopy download themselves on the first build, so stay online for it.
+
+1. **Get the fork.** In PowerShell, from the folder you want it in:
+
+   ```powershell
+   git clone -b qol https://github.com/HomoYouDidnt/exvius-offline.git
+   cd exvius-offline
+   ```
+
+   Every path below is relative to this folder.
+
+2. **JDK 11.** Install any JDK 11 (Eclipse Temurin 11 is a common one). A Java runtime bundled with an IDE
+   isn't enough, because the build needs `javac`. `JAVA_HOME` is the JDK's folder, the one with `bin\javac.exe`.
+
+3. **Python 3.10.** Install Python 3.10 next to any newer Python you have. Chaquopy checks that `python` is
+   3.10, so put it first on the PATH in the window you build from:
+
+   ```powershell
+   $env:Path = 'C:\path\to\Python310;' + $env:Path
+   python --version   # should say 3.10.x
+   ```
+
+4. **Android SDK parts.** The build needs platform 33 and build-tools 36.0.0. With the SDK's command-line tools
+   (`Sdk\cmdline-tools\<version>\bin`):
+
+   ```powershell
+   sdkmanager.bat "platforms;android-33" "build-tools;36.0.0"
+   ```
+
+   `ANDROID_HOME` is the `Sdk` folder, usually `%LOCALAPPDATA%\Android\Sdk`.
+
+5. **`tools\vendor\`.** This folder isn't in the repository. Make it and fill it:
+
+   - `tools\vendor\apktool_3.0.3.jar`: the jar from Apktool's GitHub release v3.0.3.
+   - `tools\vendor\apktool-framework\`: an empty folder. Apktool fills it on the first run.
+   - `tools\vendor\frida-gadget-17.24.3-android-arm64.so`: from Frida's GitHub release 17.24.3, the file
+     `frida-gadget-17.24.3-android-arm64.so.xz`, unpacked (7-Zip or WinRAR open `.xz`).
+   - `tools\vendor\android-agent\`: frida-compile, installed with npm:
+
+     ```powershell
+     New-Item -ItemType Directory tools\vendor\android-agent | Out-Null
+     Push-Location tools\vendor\android-agent
+     npm init -y
+     npm install frida-compile
+     Pop-Location
+     ```
+
+     The original project doesn't record which frida-compile version it used. The scripts don't use the Frida
+     APIs that changed in Frida 17, so the current version should work. If this step of the build fails, the
+     error names the version problem.
+   - No Python packages are needed here: the build only uses Python's standard library.
+
+6. **The original game.** Put the FFBE Global v9.0.0 APK at
+   `repository snapshots\FFBE-Global-v9.0.0-original.apk` and check it:
+
+   ```powershell
+   (Get-FileHash 'repository snapshots\FFBE-Global-v9.0.0-original.apk' -Algorithm SHA256).Hash
+   ```
+
+   It must be `955DEACFBE4B3D0CD04E2947EB005E310915BA98132D71216626BFB3554AD246`. Any other version won't work:
+   the hooks, the offline server and the game data are all made for v9.0.0.
+
+7. **Your signing key.** Make it once, keep it outside the repository, and back it up. Every later build must
+   use it, or Android won't update the installed app:
+
+   ```powershell
+   & "$env:JAVA_HOME\bin\keytool.exe" -genkeypair -v -keystore $HOME\exvius-2.0.jks -alias exvius -keyalg RSA -keysize 4096 -validity 36500
+   ```
+
+   Never commit the `.jks` file or its password.
+
 ## Build (Windows, on the PC)
 
 You need the same tools as a normal build (see `source/README.md`): Java 11, Python 3.10, Node.js, Android SDK
@@ -27,7 +101,7 @@ from the JDK makes one.
 $env:JAVA_HOME = 'C:\path\to\jdk-11'
 $env:ANDROID_HOME = 'C:\path\to\Android\Sdk'
 $env:EXVIUS_KEYSTORE_PASSWORD = 'your key password'
-powershell -ExecutionPolicy Bypass -File source\exvius\build_personal.ps1 -KeyStore C:\path\to\your.jks -KeyAlias youralias
+powershell -ExecutionPolicy Bypass -File source\exvius\build_personal.ps1 -KeyStore $HOME\exvius-2.0.jks -KeyAlias exvius
 ```
 
 The APK lands at `source\build\personal\exvius-2.0.apk`. The script decodes the original APK fresh every time,
@@ -60,5 +134,9 @@ The published app has no export button, but it is a debuggable build, so `adb` c
    **Import save from a file** and pick `Download/campaign.json`. Any 2.0 save already there is kept in its
    backups folder first.
 
-The published app keeps its own save; playing 2.0 afterwards never changes it. Both apps use the same save
-format, so the copied save needs no conversion.
+The published app keeps its own save; playing 2.0 afterwards never changes it.
+
+Since v0.1.25 the published app runs a newer, native game engine whose source isn't in this repository.
+Exvius 2.0 is built on the older engine that is here. The newer engine writes the same save fields, so the
+copied save should load, but that hasn't been tried. If it doesn't load, nothing is lost: the published app
+still has the original save.

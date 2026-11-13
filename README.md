@@ -4,6 +4,8 @@
 
 Everything below is built on Elvlin's work. This fork adds faster play, better summon odds, more ways to spend lapis and currencies, and fixes for a few things that were broken or hidden. It builds as a separate app called **Exvius 2.0**, so it installs next to the original Exvius Offline instead of replacing it.
 
+**It's built on the older game engine.** Since v0.1.25, Elvlin's published app runs a newer engine whose source isn't public. This fork builds the older engine that is in the repository, plus the changes below, so it doesn't include Elvlin's fixes from v0.1.25 to v0.1.31.
+
 The changes live on the [`qol` branch](https://github.com/HomoYouDidnt/exvius-offline/tree/qol). **None of them have been tested on a phone yet.** There is no download here: you build the app yourself (see [Build and install](#build-and-install)).
 
 This is an unofficial fan project and is not affiliated with Square Enix, gumi or the original author.
@@ -55,7 +57,7 @@ In short:
 3. Open it online once. It downloads the game data, about **17.8 GB**, so allow about **21 GB** of free space.
 4. Import your save in **Exvius 2.0 Settings** if you copied one over.
 
-Exvius 2.0 uses the same save format as the original, so nothing gets converted.
+A save copied from the original app should load, because the original's newer engine writes the same save fields, but that hasn't been tried yet. The original app keeps its own save either way.
 
 Please don't upload a built APK to this repository. It contains the original game, and this fork is public.
 
