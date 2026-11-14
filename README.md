@@ -28,7 +28,7 @@ A second launcher icon, **Exvius 2.0 Settings**, holds these. They apply without
 
 ### New shops
 
-- **Unit Shop:** every summonable unit that has an icon in the game data, 1,209 of them, for 1 gil each or free. Each comes at its top rarity (7★ where it has one) and maxed: max level, full stat pots and doors, and its Limit Burst at top level. They're split into tabs by base rarity and name (NV, 5★, 4★ and 1-3★).
+- **Unit Shop:** every summonable unit that has an icon in the game data, 1,209 of them, for 1 gil each or free. Each comes at its top rarity (7★ where it has one) and maxed: max level, full stat pots and doors, and its Limit Burst at top level. Neo Visions also come at EX+3, with the vision cards and other rewards each EX awakening gives. They're split into tabs by base rarity and name (NV, 5★, 4★ and 1-3★).
 - **Gil instead of lapis:** bundles and the coin exchange shops (VIP, EX Coin, Daily Coin and the Unit Shop) cost gil, at the same number they used to cost in lapis.
 - **Super Trust Moogle exchange:** spend Super Trust Moogle Exchange Tickets on a 100% STMR moogle.
 - **Moogle Shop:** 100% Trust Moogles and 100% Super Trust Moogles for 300 gil each, no buy limit, with the other coin shops.

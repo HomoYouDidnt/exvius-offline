@@ -802,21 +802,12 @@ def unit_nvp_class_up(spec, req):
     return _awaken_unit(spec, req, True)
 
 
-@_action
-def unit_ex_class_up(spec, req):
-    from player_state import unit_mst, owned_unit_stats
-    from ffbe_battle import _lv_half
-    node = _node(req, '14vWb7kX') or {}
-    unit = _unit(str(node.get('og2GHy49', '')))
-    master = unit_mst(unit['master_id']) or {}
-    group = str(master.get('JPW8Vs40') or '0')
-    level = int(unit.get('nv_ex_level') or 0) + 1
-    _require(group != '0' and level <= 3, 'unit is not eligible for another EX awakening')
-    step = next((r for r in _rows('F_NV_EX_CLASS_UP_MST')
-                 if r['JPW8Vs40'] == group and int(r['f8vk4JrD']) == level), None)
-    _require(step is not None, 'EX awakening master is missing')
-    costs, gil = _awakening_cost(node, step)
-    # Reward tuples also carry an initial level and a unit-specific trust ID.
+def ex_awakening_rewards(master, step):
+    """The reward rows one F_NV_EX_CLASS_UP_MST step grants (its `dX6cor8j`), checked by `_rewards`.
+
+    Reward tuples also carry an initial level and a unit-specific trust ID. Shared by the EX awakening
+    action and the Unit Shop, which hands out Neo Visions already at their top EX level."""
+    from player_state import unit_mst
     rewards = []
     for entry in str(step.get('dX6cor8j') or '').split(','):
         if not entry:
@@ -845,6 +836,24 @@ def unit_ex_class_up(spec, req):
             reward['affinity_points'][channel] = descriptor.split(':')[3]
         rewards.append(reward)
     _rewards(rewards)
+    return rewards
+
+
+@_action
+def unit_ex_class_up(spec, req):
+    from player_state import unit_mst, owned_unit_stats
+    from ffbe_battle import _lv_half
+    node = _node(req, '14vWb7kX') or {}
+    unit = _unit(str(node.get('og2GHy49', '')))
+    master = unit_mst(unit['master_id']) or {}
+    group = str(master.get('JPW8Vs40') or '0')
+    level = int(unit.get('nv_ex_level') or 0) + 1
+    _require(group != '0' and level <= 3, 'unit is not eligible for another EX awakening')
+    step = next((r for r in _rows('F_NV_EX_CLASS_UP_MST')
+                 if r['JPW8Vs40'] == group and int(r['f8vk4JrD']) == level), None)
+    _require(step is not None, 'EX awakening master is missing')
+    costs, gil = _awakening_cost(node, step)
+    rewards = ex_awakening_rewards(master, step)
     before = _lv_half(unit['level'], unit['exp'], owned_unit_stats(unit),
                       unit.get('lb_level', 1), unit.get('lb_exp', 0))
     _pay(costs, gil)

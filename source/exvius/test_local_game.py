@@ -1427,6 +1427,25 @@ class LocalGameIntegration(unittest.TestCase):
         self.assertEqual(unit['stat_pots'], [pot + door for pot, door in caps])
         self.assertGreaterEqual(int(unit.get('lb_level') or 0), 1)
 
+    def test_unit_shop_neo_visions_arrive_at_top_ex_level_with_ex_rewards(self):
+        from exvius_shop_catalogue import catalogue
+        from player_state import owned_unit_stats, unit_stats
+        details, products, offers = catalogue()
+        pid = str(1000000000 + 100000337)
+        self.assertEqual(str(offers[pid]['rewards'][0]['id']), '100000337')
+        player = self.game.server.State.player
+        player.currencies['gil'] = 10
+        cards = len(player.data.get('vision_cards', []))
+        self.exchange('GachaSelectExchangeExeRequest',
+                      {'4mrD6JuA': [{'jPV7Xc4N': pid, 'Qy5EvcK1': '1'}]})
+        unit = next(u for u in reversed(player.data['roster']) if str(u['master_id']) == '100000337')
+        self.assertEqual(int(unit['nv_ex_level']), 3)
+        new_cards = player.data['vision_cards'][cards:]
+        self.assertEqual([c['vc_id'] for c in new_cards], ['900020101'] * 3)
+        base = [b + p for b, p in zip(unit_stats('100000337', unit['level']), unit['stat_pots'])]
+        self.assertEqual([s - b for s, b in zip(owned_unit_stats(unit), base)],
+                         [587 + 451 + 316, 33 + 25 + 18, 19 + 15 + 10, 22 + 17 + 12, 31 + 24 + 17, 23 + 18 + 13])
+
     def test_real_stage_other_challenge_rewards_stay_one_time(self):
         player = self.game.server.State.player
         before_lapis = player.currencies['lapis_free']

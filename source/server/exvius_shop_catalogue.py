@@ -6,8 +6,8 @@ from pathlib import Path
 import time
 
 from data_paths import TEXT_DIR
-from exvius_actions_shops import (_action, _feature, _grant, _int, _node, _pay,
-                                  _reply, _require, _rewards, _rows, _store)
+from exvius_actions_shops import (Refused, _action, _feature, _grant, _int, _node, _pay,
+                                  _reply, _require, _rewards, _rows, _store, ex_awakening_rewards)
 from exvius_rewards import parse
 from ffbe_state import State
 
@@ -156,7 +156,8 @@ def top_unit_ids():
 
 def max_out_unit(unit):
     """Max a roster row the Unit Shop just granted: max level (player_state.max_unit), every stat's pots
-    and doors at the unit's caps, and its Limit Burst at the top level its tables allow."""
+    and doors at the unit's caps, its Limit Burst at the top level its tables allow, and, for a Neo
+    Vision, its top EX awakening (see max_ex_awakening)."""
     from player_state import STAT_TOKENS, limit_burst, unit_mst
     State.player.max_unit(unit['instance_id'])
     master = unit_mst(unit['master_id']) or {}
@@ -175,7 +176,41 @@ def max_out_unit(unit):
             unit['lb_level'] = max(int(unit.get('lb_level') or 1),
                                    min(max(levels), int(master.get('ENwn42DV') or 1)))
             unit['lb_exp'] = 0
+    max_ex_awakening(unit, master)
     State.player.dirty = True
+    return unit
+
+
+def max_ex_awakening(unit, master):
+    """Take a Neo Vision to its top EX level (EX+3) and grant what each EX step grants, as if it had been
+    awakened in the Unit menu at no cost.
+
+    A Neo Vision has one F_UNIT_MST row (EX levels are not separate rarities); its EX level is the roster
+    field `nv_ex_level`, keyed through the row's `JPW8Vs40` series to F_NV_EX_CLASS_UP_MST, which carries
+    each step's stat bonus (read by player_state.unit_ex_stats) and rewards (`dX6cor8j`: usually the
+    unit's vision card, sometimes a trust moogle or materia). A step whose rewards fail the checks still
+    counts toward the level, so a bad reward row never leaves a paid purchase half done."""
+    group = str(master.get('JPW8Vs40') or '0')
+    if group == '0':
+        return unit
+    steps = sorted((r for r in _rows('F_NV_EX_CLASS_UP_MST') if r.get('JPW8Vs40') == group),
+                   key=lambda r: int(r['f8vk4JrD']))
+    level = int(unit.get('nv_ex_level') or 0)
+    rewards = []
+    for step in steps:
+        if int(step['f8vk4JrD']) <= level:
+            continue
+        try:
+            rewards += ex_awakening_rewards(master, step)
+        except Refused:
+            pass
+        level = int(step['f8vk4JrD'])
+    unit['nv_ex_level'] = level
+    for row in rewards:
+        try:
+            _grant([row])
+        except Refused:
+            pass
     return unit
 
 
