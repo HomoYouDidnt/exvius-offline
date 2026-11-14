@@ -6,7 +6,7 @@ Everything below is built on Elvlin's work. This fork adds faster play, better s
 
 **It's built on the older game engine.** Since v0.1.25, Elvlin's published app runs a newer engine whose source isn't public. This fork builds the older engine that is in the repository, plus the changes below, so it doesn't include Elvlin's fixes from v0.1.25 to v0.1.31.
 
-The changes live on the [`qol` branch](https://github.com/HomoYouDidnt/exvius-offline/tree/qol). **None of them have been tested on a phone yet.** Download the APK from the [v2.0 release](https://github.com/HomoYouDidnt/exvius-offline/releases/tag/v2.0), or build it yourself (see [Build and install](#build-and-install)).
+The changes live on the [`qol` branch](https://github.com/HomoYouDidnt/exvius-offline/tree/qol). **None of them have been tested on a phone yet.** Download the APK from the [v2.1 release](https://github.com/HomoYouDidnt/exvius-offline/releases/tag/v2.1), or build it yourself (see [Build and install](#build-and-install)).
 
 This is an unofficial fan project and is not affiliated with Square Enix, gumi or the original author.
 
